@@ -44,33 +44,34 @@ const Timeline = () => {
 
       if (!stock) return { products: [], stats: { avgRunway: 0, reorderNeeded: 0, stockoutRisk: 0 } };
 
-      // Calculate velocity from order history
+      // Calculate velocity from order history using SKU matching
       const daysBack = velocityPeriod === "7d" ? 7 : velocityPeriod === "14d" ? 14 : 30;
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - daysBack);
 
       const { data: lineItems } = await supabase
         .from("order_line_items")
-        .select("product_id, quantity")
+        .select("sku, quantity")
         .gte("created_at", startDate.toISOString());
 
-      // Aggregate quantities by product
+      // Aggregate quantities by SKU
       const productSales = lineItems?.reduce((acc: any, item) => {
-        if (!acc[item.product_id]) acc[item.product_id] = 0;
-        acc[item.product_id] += item.quantity;
+        if (!acc[item.sku]) acc[item.sku] = 0;
+        acc[item.sku] += item.quantity;
         return acc;
       }, {}) || {};
 
-      // Calculate runway for each product
+      // Calculate runway for each product using SKU matching
       const products = stock.map((item: any) => {
-        const totalSold = productSales[item.products?.id] || 0;
+        const sku = item.products?.sku || '';
+        const totalSold = productSales[sku] || 0;
         const dailyVelocity = totalSold / daysBack;
         const availableStock = item.available_stock || 0;
         const runway = dailyVelocity > 0 ? Math.floor(availableStock / dailyVelocity) : 999;
         const stockoutDate = addDays(new Date(), runway);
 
         return {
-          sku: item.products?.sku || 'Unknown',
+          sku,
           name: item.products?.name || 'Unknown Product',
           available: availableStock,
           velocity: dailyVelocity.toFixed(2),

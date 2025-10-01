@@ -73,11 +73,7 @@ const Dashboard = () => {
           sku,
           product_name,
           quantity,
-          total_price,
-          products (
-            name,
-            image_url
-          )
+          total_price
         `)
         .gte("created_at", today.toISOString());
 
@@ -169,24 +165,24 @@ const Dashboard = () => {
 
       if (!categories) return [];
 
-      // Get sales per category in date range
+      // Get sales per category in date range using SKU matching
       const categoryStats = await Promise.all(
         categories.map(async (cat) => {
           const { data: products } = await supabase
             .from("products")
-            .select("id")
+            .select("sku")
             .eq("category_id", cat.id);
 
-          const productIds = products?.map(p => p.id) || [];
+          const productSkus = products?.map(p => p.sku) || [];
 
-          if (productIds.length === 0) {
+          if (productSkus.length === 0) {
             return { ...cat, revenue: 0, units: 0 };
           }
 
           const { data: lineItems } = await supabase
             .from("order_line_items")
             .select("quantity, total_price")
-            .in("product_id", productIds)
+            .in("sku", productSkus)
             .gte("created_at", dateRange.from.toISOString())
             .lte("created_at", dateRange.to.toISOString());
 
