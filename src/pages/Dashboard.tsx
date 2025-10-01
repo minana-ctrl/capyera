@@ -6,14 +6,17 @@ import { Package, Package2, ShoppingCart, DollarSign, TrendingUp, TrendingDown, 
 import { Skeleton } from "@/components/ui/skeleton";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { useState } from "react";
-import { subDays } from "date-fns";
+import { subDays, format, eachDayOfInterval } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState({
     from: subDays(new Date(), 30),
     to: new Date(),
   });
+  const [chartMetric, setChartMetric] = useState<'revenue' | 'units'>('revenue');
 
   // Today's sales metrics
   const { data: todayStats, isLoading: salesLoading } = useQuery({
@@ -119,24 +122,83 @@ const Dashboard = () => {
     },
   });
 
-  const { data: categories } = useQuery({
-    queryKey: ["category-stats"],
+  const { data: salesTrend, isLoading: trendLoading } = useQuery({
+    queryKey: ["sales-trend", dateRange],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: orders } = await supabase
+        .from("orders")
+        .select("placed_at, total_amount")
+        .gte("placed_at", dateRange.from.toISOString())
+        .lte("placed_at", dateRange.to.toISOString())
+        .order("placed_at");
+
+      const { data: lineItems } = await supabase
+        .from("order_line_items")
+        .select("created_at, quantity")
+        .gte("created_at", dateRange.from.toISOString())
+        .lte("created_at", dateRange.to.toISOString());
+
+      // Create daily buckets
+      const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
+      const dailyData = days.map(day => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const dayOrders = orders?.filter(o => 
+          format(new Date(o.placed_at), 'yyyy-MM-dd') === dayStr
+        ) || [];
+        const dayItems = lineItems?.filter(i => 
+          format(new Date(i.created_at), 'yyyy-MM-dd') === dayStr
+        ) || [];
+
+        return {
+          date: format(day, 'MMM dd'),
+          revenue: dayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0),
+          units: dayItems.reduce((sum, i) => sum + i.quantity, 0),
+        };
+      });
+
+      return dailyData;
+    },
+  });
+
+  const { data: categories } = useQuery({
+    queryKey: ["category-stats", dateRange],
+    queryFn: async () => {
+      const { data: categories } = await supabase
         .from("categories")
-        .select(`
-          id,
-          name,
-          products (
-            id
-          )
-        `);
-      
-      if (error) throw error;
-      return data?.map(cat => ({
-        ...cat,
-        productCount: cat.products?.length || 0
-      }));
+        .select("id, name");
+
+      if (!categories) return [];
+
+      // Get sales per category in date range
+      const categoryStats = await Promise.all(
+        categories.map(async (cat) => {
+          const { data: products } = await supabase
+            .from("products")
+            .select("id")
+            .eq("category_id", cat.id);
+
+          const productIds = products?.map(p => p.id) || [];
+
+          if (productIds.length === 0) {
+            return { ...cat, revenue: 0, units: 0 };
+          }
+
+          const { data: lineItems } = await supabase
+            .from("order_line_items")
+            .select("quantity, total_price")
+            .in("product_id", productIds)
+            .gte("created_at", dateRange.from.toISOString())
+            .lte("created_at", dateRange.to.toISOString());
+
+          const revenue = lineItems?.reduce((sum, i) => sum + Number(i.total_price), 0) || 0;
+          const units = lineItems?.reduce((sum, i) => sum + i.quantity, 0) || 0;
+
+          return { ...cat, revenue, units };
+        })
+      );
+
+      return categoryStats.filter(c => c.revenue > 0 || c.units > 0)
+        .sort((a, b) => b.revenue - a.revenue);
     },
   });
 
@@ -389,22 +451,63 @@ const Dashboard = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Sales Analytics
+                Sales Trend
               </CardTitle>
-              <DateRangeFilter onDateChange={(from, to) => setDateRange({ from, to })} />
+              <div className="flex items-center gap-4">
+                <Tabs value={chartMetric} onValueChange={(v) => setChartMetric(v as 'revenue' | 'units')}>
+                  <TabsList>
+                    <TabsTrigger value="revenue">Revenue</TabsTrigger>
+                    <TabsTrigger value="units">Units Sold</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <DateRangeFilter onDateChange={(from, to) => setDateRange({ from, to })} />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] flex items-center justify-center border-2 border-dashed rounded-lg">
-              <div className="text-center text-muted-foreground">
-                <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Sales trend chart coming soon</p>
-                <p className="text-sm">Toggleable between Revenue and Units Sold</p>
-              </div>
-            </div>
+            {trendLoading ? (
+              <Skeleton className="h-[350px] w-full" />
+            ) : (
+              <ResponsiveContainer width="100%" height={350}>
+                <LineChart data={salesTrend}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="date" 
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <YAxis 
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tickFormatter={(value) => 
+                      chartMetric === 'revenue' ? `$${value.toFixed(0)}` : value
+                    }
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px'
+                    }}
+                    formatter={(value: number) => 
+                      chartMetric === 'revenue' ? `$${value.toFixed(2)}` : value
+                    }
+                  />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey={chartMetric} 
+                    name={chartMetric === 'revenue' ? 'Revenue' : 'Units Sold'}
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={2}
+                    dot={{ fill: 'hsl(var(--primary))' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -412,27 +515,51 @@ const Dashboard = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Package2 className="h-5 w-5" />
-              Category Performance
+              Category Performance (Selected Period)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-3 md:grid-cols-3">
-              {categories?.slice(0, 6).map((category) => (
-                <Card key={category.id} className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{category.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {category.productCount} products
-                        </p>
-                      </div>
-                      <Badge variant="outline">{category.productCount}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {isLoading ? (
+              <Skeleton className="h-[300px] w-full" />
+            ) : categories && categories.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={categories.slice(0, 8)}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="name" 
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis 
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tickFormatter={(value) => `$${value.toFixed(0)}`}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px'
+                    }}
+                    formatter={(value: number) => `$${value.toFixed(2)}`}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="revenue" 
+                    name="Revenue"
+                    fill="hsl(var(--primary))" 
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No category data available for selected period
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
