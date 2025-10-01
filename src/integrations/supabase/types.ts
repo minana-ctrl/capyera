@@ -849,6 +849,18 @@ export type Database = {
         Args: { bundle_uuid: string }
         Returns: number
       }
+      deduct_inventory: {
+        Args: { p_product_id: string; p_quantity: number }
+        Returns: undefined
+      }
+      release_inventory: {
+        Args: { p_product_id: string; p_quantity: number }
+        Returns: undefined
+      }
+      reserve_inventory: {
+        Args: { p_product_id: string; p_quantity: number }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
