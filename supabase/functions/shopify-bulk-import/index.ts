@@ -63,7 +63,7 @@ serve(async (req) => {
                   firstName
                   lastName
                   email
-                  ordersCount
+                  numberOfOrders
                 }
                 shippingAddress {
                   address1
@@ -260,7 +260,7 @@ serve(async (req) => {
       // Import orders
       for (const [orderId, shopifyOrder] of ordersMap) {
         try {
-          const isNewCustomer = shopifyOrder.customer?.ordersCount === 1;
+          const isNewCustomer = shopifyOrder.customer?.numberOfOrders === 1;
 
           // Insert order
           const { data: insertedOrder, error: orderError } = await supabase
