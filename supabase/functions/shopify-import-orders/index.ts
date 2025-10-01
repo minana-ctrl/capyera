@@ -22,7 +22,7 @@ serve(async (req) => {
     // Parse options
     const body = await req.json().catch(() => ({} as any));
     const initialPageInfo: string | null = body?.page_info ?? null;
-    const maxPages: number = Math.min(Number(body?.maxPages ?? 10), 40); // safety cap
+    const maxPages: number = Math.min(Number(body?.maxPages ?? 100), 200); // increased cap for full imports
     const createdAtMinInput: string | null = body?.createdAtMin ?? null;
     const existingJobId: string | null = body?.job_id ?? null;
 
@@ -70,6 +70,11 @@ serve(async (req) => {
     let pagesProcessed = 0;
 
     while (hasNextPage && pagesProcessed < maxPages) {
+      // Add 750ms delay between requests to avoid rate limits
+      if (pagesProcessed > 0) {
+        await new Promise((r) => setTimeout(r, 750));
+      }
+
       // Build Shopify API URL - when using page_info, don't include other params
       let url: string;
       if (pageInfo) {
@@ -78,7 +83,7 @@ serve(async (req) => {
         url = `https://${shopifyDomain}/admin/api/2024-01/orders.json?status=any&created_at_min=${createdAtMin}&limit=250`;
       }
 
-      console.log(`Fetching orders from Shopify (page ${Math.floor(recordsImported / 250) + 1})...`);
+      console.log(`Fetching orders page ${pagesProcessed + 1} (${recordsImported} imported so far)...`);
 
       const resp = await fetch(url, {
         headers: {

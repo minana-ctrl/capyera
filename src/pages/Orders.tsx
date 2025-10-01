@@ -12,6 +12,7 @@ import { format } from "date-fns";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
+  const [isNormalImporting, setIsNormalImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<{
     step: 'idle' | 'starting' | 'polling' | 'processing' | 'complete';
     message: string;
@@ -48,6 +49,30 @@ export default function Orders() {
       return data;
     },
   });
+
+  const handleNormalImport = async () => {
+    setIsNormalImporting(true);
+    toast.info("Starting order import with pagination...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "shopify-import-orders",
+        { body: { maxPages: 200 } } // Allow up to 200 pages (50,000 orders)
+      );
+
+      if (error) throw error;
+
+      toast.success(
+        `Import completed! ${data.records_imported} orders imported, ${data.records_failed || 0} failed.`
+      );
+      refetch();
+    } catch (error: any) {
+      console.error("Normal import error:", error);
+      toast.error(`Failed to import orders: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsNormalImporting(false);
+    }
+  };
 
   const handleBulkImport = async () => {
     setIsImporting(true);
@@ -178,43 +203,38 @@ export default function Orders() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Bulk Import from Shopify</CardTitle>
+                <CardTitle>Import from Shopify</CardTitle>
                 <CardDescription>
-                  Import all historical orders (last 2 years) using GraphQL Bulk Operations
+                  Import all historical orders (last 2 years) using paginated API calls
                 </CardDescription>
               </div>
-              <Button onClick={handleBulkImport} disabled={isImporting}>
-                {isImporting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {importStatus.step === 'starting' && 'Starting...'}
-                    {importStatus.step === 'polling' && 'Waiting...'}
-                    {importStatus.step === 'processing' && 'Importing...'}
-                  </>
-                ) : (
-                  <>
-                    <Download className="mr-2 h-4 w-4" />
-                    Bulk Import
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleNormalImport} disabled={isNormalImporting || isImporting}>
+                  {isNormalImporting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Import Orders
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </CardHeader>
-          {(isImporting || importStatus.step !== 'idle') && (
+          {isNormalImporting && (
             <CardContent>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Status:</span>
-                  <Badge variant={importStatus.step === 'complete' ? 'default' : 'secondary'}>
-                    {importStatus.step}
-                  </Badge>
+                  <Badge variant="secondary">Importing</Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{importStatus.message}</p>
-                {importStatus.objectCount && (
-                  <p className="text-sm font-medium">
-                    {importStatus.objectCount.toLocaleString()} objects
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Fetching orders with rate limiting (750ms between requests)...
+                </p>
               </div>
             </CardContent>
           )}
