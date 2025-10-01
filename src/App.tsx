@@ -12,6 +12,7 @@ import Products from "./pages/Products";
 import Bundles from "./pages/Bundles";
 import Timeline from "./pages/Timeline";
 import SalesOrders from "./pages/SalesOrders";
+import Orders from "./pages/Orders";
 import Warehouses from "./pages/Warehouses";
 import Suppliers from "./pages/Suppliers";
 import NotFound from "./pages/NotFound";
@@ -33,7 +34,7 @@ const App = () => (
           <Route path="/products" element={<Products />} />
           <Route path="/bundles" element={<Bundles />} />
           <Route path="/timeline" element={<Timeline />} />
-          <Route path="/orders" element={<SalesOrders />} />
+          <Route path="/orders" element={<Orders />} />
           <Route path="/sales-orders" element={<Navigate to="/orders" replace />} />
           <Route path="/warehouses" element={<Warehouses />} />
           <Route path="/suppliers" element={<Suppliers />} />
