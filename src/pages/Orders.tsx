@@ -51,17 +51,25 @@ export default function Orders() {
   });
 
   const handleNormalImport = async () => {
+    console.log("=== Import button clicked ===");
     setIsNormalImporting(true);
     toast.info("Starting order import with pagination...");
 
     try {
+      console.log("Calling shopify-import-orders edge function...");
       const { data, error } = await supabase.functions.invoke(
         "shopify-import-orders",
         { body: { maxPages: 200 } } // Allow up to 200 pages (50,000 orders)
       );
 
-      if (error) throw error;
+      console.log("Edge function response:", { data, error });
 
+      if (error) {
+        console.error("Edge function error:", error);
+        throw error;
+      }
+
+      console.log("Import completed successfully:", data);
       toast.success(
         `Import completed! ${data.records_imported} orders imported, ${data.records_failed || 0} failed.`
       );
@@ -70,6 +78,7 @@ export default function Orders() {
       console.error("Normal import error:", error);
       toast.error(`Failed to import orders: ${error?.message || 'Unknown error'}`);
     } finally {
+      console.log("Import process finished, resetting state");
       setIsNormalImporting(false);
     }
   };
