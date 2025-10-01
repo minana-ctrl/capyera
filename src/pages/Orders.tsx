@@ -100,7 +100,8 @@ export default function Orders() {
           objectCount = checkData.object_count;
           toast.success(`Export complete! ${objectCount} objects ready for import.`);
         } else if (checkData.status === 'FAILED') {
-          throw new Error('Bulk operation failed');
+          const code = checkData.error_code || 'UNKNOWN_ERROR';
+          throw new Error(`Bulk operation failed (${code})`);
         }
       }
 
@@ -132,9 +133,9 @@ export default function Orders() {
       );
       
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Bulk import error:", error);
-      toast.error("Failed to import orders. Check console for details.");
+      toast.error(`Failed to import orders: ${error?.message || 'Unknown error'}`);
       setImportStatus({
         step: 'idle',
         message: 'Import failed. Please try again.'
