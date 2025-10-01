@@ -36,25 +36,35 @@ const Timeline = () => {
         .select(`
           *,
           products (
+            id,
             sku,
-            name,
-            velocity_7d,
-            velocity_14d,
-            velocity_30d
+            name
           )
         `);
 
       if (!stock) return { products: [], stats: { avgRunway: 0, reorderNeeded: 0, stockoutRisk: 0 } };
 
+      // Calculate velocity from order history
+      const daysBack = velocityPeriod === "7d" ? 7 : velocityPeriod === "14d" ? 14 : 30;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysBack);
+
+      const { data: lineItems } = await supabase
+        .from("order_line_items")
+        .select("product_id, quantity")
+        .gte("created_at", startDate.toISOString());
+
+      // Aggregate quantities by product
+      const productSales = lineItems?.reduce((acc: any, item) => {
+        if (!acc[item.product_id]) acc[item.product_id] = 0;
+        acc[item.product_id] += item.quantity;
+        return acc;
+      }, {}) || {};
+
       // Calculate runway for each product
       const products = stock.map((item: any) => {
-        const velocity = velocityPeriod === "7d" 
-          ? item.products?.velocity_7d 
-          : velocityPeriod === "14d"
-          ? item.products?.velocity_14d
-          : item.products?.velocity_30d;
-
-        const dailyVelocity = Number(velocity) || 0;
+        const totalSold = productSales[item.products?.id] || 0;
+        const dailyVelocity = totalSold / daysBack;
         const availableStock = item.available_stock || 0;
         const runway = dailyVelocity > 0 ? Math.floor(availableStock / dailyVelocity) : 999;
         const stockoutDate = addDays(new Date(), runway);
@@ -68,16 +78,18 @@ const Timeline = () => {
           stockoutDate,
           status: runway < 7 ? 'critical' : runway < 14 ? 'warning' : 'good',
           belowReorder: availableStock <= (item.reorder_point || 0),
+          parLevel: item.par_level || 0,
         };
-      }).filter((p: any) => p.velocity > 0);
+      });
 
       // Calculate stats
-      const validProducts = products.filter((p: any) => p.runway < 999);
+      const productsWithSales = products.filter((p: any) => parseFloat(p.velocity) > 0);
+      const validProducts = productsWithSales.filter((p: any) => p.runway < 999);
       const avgRunway = validProducts.length > 0
         ? Math.floor(validProducts.reduce((sum: number, p: any) => sum + p.runway, 0) / validProducts.length)
         : 0;
       const reorderNeeded = products.filter((p: any) => p.belowReorder).length;
-      const stockoutRisk = products.filter((p: any) => p.runway < 7).length;
+      const stockoutRisk = productsWithSales.filter((p: any) => p.runway < 7).length;
 
       // Prepare chart data - group by runway buckets
       const runwayBuckets = [
@@ -88,7 +100,7 @@ const Timeline = () => {
         { name: '60+ days', count: 0, color: '#3b82f6' },
       ];
 
-      products.forEach((p: any) => {
+      productsWithSales.forEach((p: any) => {
         if (p.runway <= 7) runwayBuckets[0].count++;
         else if (p.runway <= 14) runwayBuckets[1].count++;
         else if (p.runway <= 30) runwayBuckets[2].count++;
@@ -97,9 +109,10 @@ const Timeline = () => {
       });
 
       return {
-        products: products.sort((a: any, b: any) => a.runway - b.runway).slice(0, 20),
+        products: productsWithSales.sort((a: any, b: any) => a.runway - b.runway).slice(0, 20),
         stats: { avgRunway, reorderNeeded, stockoutRisk },
         chartData: runwayBuckets,
+        allProducts: products,
       };
     },
   });
@@ -320,8 +333,18 @@ const Timeline = () => {
               <div className="h-[400px] flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No products with velocity data yet</p>
-                  <p className="text-sm">Velocity will be calculated from order history</p>
+                  {forecastData?.allProducts && forecastData.allProducts.length > 0 ? (
+                    <>
+                      <p className="font-semibold">{forecastData.allProducts.length} products in stock</p>
+                      <p className="text-sm">No sales in the last {velocityPeriod === '7d' ? '7' : velocityPeriod === '14d' ? '14' : '30'} days</p>
+                      <p className="text-xs mt-2">Try selecting a different velocity period</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>No inventory data available</p>
+                      <p className="text-sm">Import products and orders to see forecasts</p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
