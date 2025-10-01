@@ -19,33 +19,57 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting Shopify order import...');
+    // Parse options
+    const body = await req.json().catch(() => ({} as any));
+    const initialPageInfo: string | null = body?.page_info ?? null;
+    const maxPages: number = Math.min(Number(body?.maxPages ?? 10), 40); // safety cap
+    const createdAtMinInput: string | null = body?.createdAtMin ?? null;
+    const existingJobId: string | null = body?.job_id ?? null;
 
-    // Create import log entry
-    const { data: importLog, error: logError } = await supabase
-      .from('import_logs')
-      .insert({
-        import_type: 'shopify_orders',
-        status: 'in_progress',
-        file_name: 'shopify_api_import'
-      })
-      .select()
-      .single();
+    console.log('Starting Shopify order import...', { maxPages });
 
-    if (logError) throw logError;
+    // Create or reuse import log entry
+    let jobId: string;
+    let importLog: any = null;
+    if (existingJobId) {
+      const { data: existing, error: getErr } = await supabase
+        .from('import_logs')
+        .select('id, records_imported, records_failed, status')
+        .eq('id', existingJobId)
+        .single();
+      if (getErr) throw getErr;
+      importLog = existing;
+      jobId = existingJobId;
+      // ensure status is in_progress
+      await supabase.from('import_logs').update({ status: 'in_progress' }).eq('id', jobId);
+    } else {
+      const { data: created, error: logError } = await supabase
+        .from('import_logs')
+        .insert({
+          import_type: 'shopify_orders',
+          status: 'in_progress',
+          file_name: 'shopify_api_import'
+        })
+        .select()
+        .single();
+      if (logError) throw logError;
+      importLog = created;
+      jobId = created.id;
+    }
 
-    // Calculate date 2 years ago
+    // Calculate date 2 years ago (or use provided)
     const twoYearsAgo = new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-    const createdAtMin = twoYearsAgo.toISOString();
+    const createdAtMin = createdAtMinInput ?? twoYearsAgo.toISOString();
 
     let recordsImported = 0;
     let recordsFailed = 0;
     const errorLog: any[] = [];
     let hasNextPage = true;
-    let pageInfo = null;
+    let pageInfo: string | null = initialPageInfo;
+    let pagesProcessed = 0;
 
-    while (hasNextPage) {
+    while (hasNextPage && pagesProcessed < maxPages) {
       // Build Shopify API URL - when using page_info, don't include other params
       let url: string;
       if (pageInfo) {
@@ -56,18 +80,26 @@ serve(async (req) => {
 
       console.log(`Fetching orders from Shopify (page ${Math.floor(recordsImported / 250) + 1})...`);
 
-      const shopifyResponse = await fetch(url, {
+      const resp = await fetch(url, {
         headers: {
           'X-Shopify-Access-Token': shopifyToken,
           'Content-Type': 'application/json',
         },
       });
 
-      if (!shopifyResponse.ok) {
-        throw new Error(`Shopify API error: ${shopifyResponse.status} ${await shopifyResponse.text()}`);
+      // Handle rate limiting
+      if (resp.status === 429) {
+        const retryAfter = Number(resp.headers.get('Retry-After') || '2');
+        console.warn(`Rate limited. Retrying after ${retryAfter}s`);
+        await new Promise((r) => setTimeout(r, (retryAfter + 1) * 1000));
+        continue;
       }
 
-      const data = await shopifyResponse.json();
+      if (!resp.ok) {
+        throw new Error(`Shopify API error: ${resp.status} ${await resp.text()}`);
+      }
+
+      const data = await resp.json();
       const orders = data.orders || [];
 
       console.log(`Processing ${orders.length} orders...`);
@@ -140,15 +172,28 @@ serve(async (req) => {
         }
       }
 
-      // Check for next page
-      const linkHeader = shopifyResponse.headers.get('Link');
-      if (linkHeader && linkHeader.includes('rel="next"')) {
-        const nextMatch = linkHeader.match(/<[^>]*page_info=([^>&]+)[^>]*>;\s*rel="next"/);
-        pageInfo = nextMatch ? nextMatch[1] : null;
-        hasNextPage = !!pageInfo;
+      // Check for next page using robust Link parser
+      const linkHeader = resp.headers.get('Link');
+      if (linkHeader) {
+        const parts = linkHeader.split(',');
+        const nextPart = parts.find((p) => p.includes('rel="next"'));
+        if (nextPart) {
+          const urlMatch = nextPart.match(/<([^>]+)>/);
+          if (urlMatch) {
+            const nextUrl = new URL(urlMatch[1]);
+            pageInfo = nextUrl.searchParams.get('page_info');
+            hasNextPage = !!pageInfo;
+          } else {
+            hasNextPage = false;
+          }
+        } else {
+          hasNextPage = false;
+        }
       } else {
         hasNextPage = false;
       }
+
+      pagesProcessed++;
     }
 
     // Update import log
