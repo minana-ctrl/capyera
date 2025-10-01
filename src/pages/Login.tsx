@@ -10,7 +10,7 @@ const Login = () => {
   useEffect(() => {
     supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
-        navigate("/sales-today");
+        navigate("/dashboard");
       }
     });
   }, [navigate]);

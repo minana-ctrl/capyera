@@ -8,7 +8,7 @@ const Index = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate("/sales-today");
+        navigate("/dashboard");
       } else {
         navigate("/login");
       }
