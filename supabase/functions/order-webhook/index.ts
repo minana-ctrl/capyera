@@ -44,7 +44,13 @@ serve(async (req) => {
               product_revenue: parseFloat(order.totalPriceSet?.shopMoney?.amount || 0) - parseFloat(order.totalShippingPriceSet?.shopMoney?.amount || 0),
               currency: order.totalPriceSet?.shopMoney?.currencyCode || 'USD',
               country_code: order.shippingAddress?.countryCode,
+              customer_email: order.customer?.email || order.email,
+              customer_name: order.customer?.displayName || `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim() || order.billingAddress?.name,
+              shipping_address: order.shippingAddress,
+              is_new_customer: order.customer?.numberOfOrders === '1',
               placed_at: order.createdAt,
+              fulfilled_at: order.displayFulfillmentStatus?.toLowerCase() === 'fulfilled' ? order.updatedAt : null,
+              cancelled_at: order.cancelledAt,
               updated_at: order.updatedAt,
             }, {
               onConflict: 'order_number',
@@ -74,7 +80,7 @@ serve(async (req) => {
               if (product) {
                 await supabase
                   .from('order_line_items')
-                  .insert({
+                  .upsert({
                     order_id: orderData.id,
                     product_id: product.id,
                     sku: item.sku,
@@ -82,13 +88,16 @@ serve(async (req) => {
                     quantity: item.quantity,
                     unit_price: product.unit_price,
                     total_price: product.unit_price * item.quantity,
+                  }, {
+                    onConflict: 'order_id,sku',
+                    ignoreDuplicates: false
                   });
               } else {
                 // Product not found - still insert line item with SKU for reference
                 console.warn(`Product not found for SKU: ${item.sku}`);
                 await supabase
                   .from('order_line_items')
-                  .insert({
+                  .upsert({
                     order_id: orderData.id,
                     product_id: null,
                     sku: item.sku,
@@ -96,6 +105,9 @@ serve(async (req) => {
                     quantity: item.quantity,
                     unit_price: 0,
                     total_price: 0,
+                  }, {
+                    onConflict: 'order_id,sku',
+                    ignoreDuplicates: false
                   });
               }
             }
