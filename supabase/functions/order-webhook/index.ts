@@ -84,7 +84,7 @@ serve(async (req) => {
                 .maybeSingle();
 
               if (product) {
-                await supabase
+                const { error: lineItemError } = await supabase
                   .from('order_line_items')
                   .insert({
                     order_id: orderData.id,
@@ -95,10 +95,14 @@ serve(async (req) => {
                     unit_price: product.unit_price,
                     total_price: product.unit_price * item.quantity,
                   });
+                
+                if (lineItemError) {
+                  console.error(`Error inserting line item for SKU ${item.sku}:`, lineItemError);
+                }
               } else {
                 // Product not found - still insert line item with SKU for reference
                 console.warn(`Product not found for SKU: ${item.sku}`);
-                await supabase
+                const { error: lineItemError } = await supabase
                   .from('order_line_items')
                   .insert({
                     order_id: orderData.id,
@@ -109,6 +113,10 @@ serve(async (req) => {
                     unit_price: 0,
                     total_price: 0,
                   });
+                
+                if (lineItemError) {
+                  console.error(`Error inserting unknown line item for SKU ${item.sku}:`, lineItemError);
+                }
               }
             }
           }
