@@ -2,9 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
+import SalesToday from "./pages/SalesToday";
 import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
 import Products from "./pages/Products";
@@ -26,12 +27,14 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/sales-today" element={<SalesToday />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/products" element={<Products />} />
           <Route path="/bundles" element={<Bundles />} />
           <Route path="/timeline" element={<Timeline />} />
-          <Route path="/sales-orders" element={<SalesOrders />} />
+          <Route path="/orders" element={<SalesOrders />} />
+          <Route path="/sales-orders" element={<Navigate to="/orders" replace />} />
           <Route path="/warehouses" element={<Warehouses />} />
           <Route path="/suppliers" element={<Suppliers />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

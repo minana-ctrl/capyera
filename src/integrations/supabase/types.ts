@@ -168,6 +168,133 @@ export type Database = {
         }
         Relationships: []
       }
+      order_line_items: {
+        Row: {
+          bundle_id: string | null
+          created_at: string | null
+          id: string
+          order_id: string
+          product_id: string | null
+          product_name: string
+          quantity: number
+          sku: string
+          total_price: number
+          unit_price: number
+        }
+        Insert: {
+          bundle_id?: string | null
+          created_at?: string | null
+          id?: string
+          order_id: string
+          product_id?: string | null
+          product_name: string
+          quantity: number
+          sku: string
+          total_price: number
+          unit_price: number
+        }
+        Update: {
+          bundle_id?: string | null
+          created_at?: string | null
+          id?: string
+          order_id?: string
+          product_id?: string | null
+          product_name?: string
+          quantity?: number
+          sku?: string
+          total_price?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_line_items_bundle_id_fkey"
+            columns: ["bundle_id"]
+            isOneToOne: false
+            referencedRelation: "bundles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_line_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_line_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          cancelled_at: string | null
+          country_code: string | null
+          created_at: string | null
+          currency: string | null
+          customer_email: string | null
+          customer_name: string | null
+          fulfilled_at: string | null
+          fulfillment_status: string | null
+          id: string
+          is_new_customer: boolean | null
+          order_number: string
+          placed_at: string
+          product_revenue: number | null
+          shipping_address: Json | null
+          shipping_cost: number | null
+          shopify_order_id: string | null
+          status: string
+          total_amount: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          cancelled_at?: string | null
+          country_code?: string | null
+          created_at?: string | null
+          currency?: string | null
+          customer_email?: string | null
+          customer_name?: string | null
+          fulfilled_at?: string | null
+          fulfillment_status?: string | null
+          id?: string
+          is_new_customer?: boolean | null
+          order_number: string
+          placed_at?: string
+          product_revenue?: number | null
+          shipping_address?: Json | null
+          shipping_cost?: number | null
+          shopify_order_id?: string | null
+          status?: string
+          total_amount?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          cancelled_at?: string | null
+          country_code?: string | null
+          created_at?: string | null
+          currency?: string | null
+          customer_email?: string | null
+          customer_name?: string | null
+          fulfilled_at?: string | null
+          fulfillment_status?: string | null
+          id?: string
+          is_new_customer?: boolean | null
+          order_number?: string
+          placed_at?: string
+          product_revenue?: number | null
+          shipping_address?: Json | null
+          shipping_cost?: number | null
+          shopify_order_id?: string | null
+          status?: string
+          total_amount?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           category_id: string | null
@@ -616,6 +743,7 @@ export type Database = {
       }
       warehouse_stock: {
         Row: {
+          available_stock: number | null
           created_at: string | null
           id: string
           last_counted_at: string | null
@@ -623,10 +751,12 @@ export type Database = {
           product_id: string
           quantity: number
           reorder_point: number | null
+          reserved_stock: number | null
           updated_at: string | null
           warehouse_id: string
         }
         Insert: {
+          available_stock?: number | null
           created_at?: string | null
           id?: string
           last_counted_at?: string | null
@@ -634,10 +764,12 @@ export type Database = {
           product_id: string
           quantity?: number
           reorder_point?: number | null
+          reserved_stock?: number | null
           updated_at?: string | null
           warehouse_id: string
         }
         Update: {
+          available_stock?: number | null
           created_at?: string | null
           id?: string
           last_counted_at?: string | null
@@ -645,6 +777,7 @@ export type Database = {
           product_id?: string
           quantity?: number
           reorder_point?: number | null
+          reserved_stock?: number | null
           updated_at?: string | null
           warehouse_id?: string
         }
@@ -708,7 +841,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      calculate_bundle_availability: {
+        Args: { bundle_uuid: string }
+        Returns: number
+      }
+      calculate_bundle_cost: {
+        Args: { bundle_uuid: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

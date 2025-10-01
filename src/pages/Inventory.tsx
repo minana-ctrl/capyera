@@ -70,7 +70,7 @@ const Inventory = () => {
     return { status: "In Stock", color: "bg-green-500" };
   };
 
-  const lowStockCount = inventory?.filter(item => item.quantity <= item.par_level).length || 0;
+  const lowStockCount = inventory?.filter(item => item.available_stock <= item.par_level).length || 0;
 
   return (
     <DashboardLayout>
@@ -168,7 +168,7 @@ const Inventory = () => {
                       <TableHead>Product</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead>Warehouse</TableHead>
-                      <TableHead className="text-right">Current Stock</TableHead>
+                      <TableHead>Current Stock</TableHead>
                       <TableHead className="text-right">Par Level</TableHead>
                       <TableHead className="text-right">Reorder Point</TableHead>
                       <TableHead>Status</TableHead>
@@ -176,7 +176,14 @@ const Inventory = () => {
                   </TableHeader>
                   <TableBody>
                     {inventory?.map((item) => {
-                      const stockStatus = getLowStockStatus(item.quantity, item.par_level);
+                      const stockStatus = item.available_stock === 0 
+                        ? { status: "Out of Stock", color: "bg-red-500" }
+                        : item.available_stock <= item.par_level * 0.2
+                        ? { status: "Critical", color: "bg-red-500" }
+                        : item.available_stock <= item.par_level
+                        ? { status: "Low Stock", color: "bg-yellow-500" }
+                        : { status: "In Stock", color: "bg-green-500" };
+                        
                       return (
                         <TableRow key={item.id} className="hover:bg-muted/50">
                           <TableCell className="font-mono text-sm">{item.products?.sku}</TableCell>
@@ -187,7 +194,12 @@ const Inventory = () => {
                           <TableCell>
                             <Badge variant="secondary">{item.warehouses?.name}</Badge>
                           </TableCell>
-                          <TableCell className="text-right font-semibold">{item.quantity}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="font-semibold">{item.available_stock}</div>
+                            <div className="text-xs text-muted-foreground">
+                              ({item.quantity} total, {item.reserved_stock} reserved)
+                            </div>
+                          </TableCell>
                           <TableCell className="text-right text-muted-foreground">{item.par_level}</TableCell>
                           <TableCell className="text-right text-muted-foreground">{item.reorder_point}</TableCell>
                           <TableCell>

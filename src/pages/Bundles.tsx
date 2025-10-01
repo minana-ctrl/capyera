@@ -24,14 +24,34 @@ const Bundles = () => {
             quantity,
             products (
               sku,
-              name
+              name,
+              cost_price
             )
           )
         `)
         .order("name");
       
       if (error) throw error;
-      return data;
+      
+      // Calculate "Can Make" and Bundle Cost for each bundle
+      const bundlesWithCalcs = await Promise.all(data.map(async (bundle) => {
+        // Calculate can make quantity
+        const { data: canMakeData } = await supabase
+          .rpc('calculate_bundle_availability', { bundle_uuid: bundle.id });
+        
+        // Calculate bundle cost
+        const bundleCost = bundle.bundle_components?.reduce((sum: number, comp: any) => {
+          return sum + (Number(comp.products?.cost_price || 0) * comp.quantity);
+        }, 0) || 0;
+        
+        return {
+          ...bundle,
+          canMake: canMakeData || 0,
+          bundleCost: bundleCost
+        };
+      }));
+      
+      return bundlesWithCalcs;
     },
   });
 
@@ -61,7 +81,7 @@ const Bundles = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                {bundles?.map((bundle) => (
+                {bundles?.map((bundle: any) => (
                   <Collapsible key={bundle.id}>
                     <Card className="hover:shadow-md transition-shadow">
                       <CollapsibleTrigger className="w-full">
@@ -73,9 +93,17 @@ const Bundles = () => {
                               <p className="font-semibold">{bundle.name}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <p className="text-sm text-muted-foreground">Can Make</p>
+                              <p className="text-lg font-bold text-primary">{bundle.canMake}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm text-muted-foreground">Bundle Cost</p>
+                              <p className="text-lg font-semibold">${bundle.bundleCost.toFixed(2)}</p>
+                            </div>
                             <Badge variant="outline">
-                              {bundle.bundle_components?.length || 0} items
+                              {bundle.bundle_components?.length || 0} components
                             </Badge>
                             {bundle.is_active ? (
                               <Badge className="bg-green-500">Active</Badge>
@@ -87,15 +115,29 @@ const Bundles = () => {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="border-t px-4 pb-4 pt-2">
-                          <p className="text-sm font-medium mb-2">Bundle Components:</p>
-                          <div className="space-y-1">
-                            {bundle.bundle_components?.map((component, idx) => (
-                              <div key={idx} className="flex items-center gap-2 text-sm pl-4">
-                                <Badge variant="secondary" className="font-mono">
-                                  {component.products?.sku}
-                                </Badge>
-                                <span>{component.products?.name}</span>
-                                <span className="text-muted-foreground">× {component.quantity}</span>
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-sm font-medium">Bundle Components:</p>
+                            <p className="text-xs text-muted-foreground">
+                              Bundle Cost: ${bundle.bundleCost.toFixed(2)} (auto-calculated)
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            {bundle.bundle_components?.map((component: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="font-mono">
+                                    {component.products?.sku}
+                                  </Badge>
+                                  <span>{component.products?.name}</span>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <span className="text-muted-foreground">
+                                    Qty: {component.quantity}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    Cost: ${(Number(component.products?.cost_price || 0) * component.quantity).toFixed(2)}
+                                  </span>
+                                </div>
                               </div>
                             ))}
                           </div>
