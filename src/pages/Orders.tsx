@@ -12,6 +12,13 @@ import { format } from "date-fns";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{
+    step: 'idle' | 'starting' | 'polling' | 'processing' | 'complete';
+    message: string;
+    operationId?: string;
+    url?: string;
+    objectCount?: number;
+  }>({ step: 'idle', message: '' });
 
   const { data: orders, isLoading, refetch } = useQuery({
     queryKey: ["orders"],
@@ -42,22 +49,96 @@ export default function Orders() {
     },
   });
 
-  const handleImport = async () => {
+  const handleBulkImport = async () => {
     setIsImporting(true);
-    toast.info("Starting Shopify order import...");
-
+    
     try {
-      const { data, error } = await supabase.functions.invoke("shopify-import-orders");
+      // Step 1: Start bulk operation
+      setImportStatus({ step: 'starting', message: 'Starting bulk export from Shopify...' });
+      toast.info("Starting bulk export...");
 
-      if (error) throw error;
+      const { data: startData, error: startError } = await supabase.functions.invoke(
+        "shopify-bulk-import",
+        { body: { action: 'start' } }
+      );
+
+      if (startError) throw startError;
+
+      const operationId = startData.operation_id;
+      setImportStatus({ 
+        step: 'polling', 
+        message: 'Waiting for Shopify to prepare data...', 
+        operationId 
+      });
+      toast.info("Bulk export started. Waiting for completion...");
+
+      // Step 2: Poll for completion (check every 10 seconds)
+      let completed = false;
+      let url = '';
+      let objectCount = 0;
+
+      while (!completed) {
+        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
+
+        const { data: checkData, error: checkError } = await supabase.functions.invoke(
+          "shopify-bulk-import",
+          { body: { action: 'check' } }
+        );
+
+        if (checkError) throw checkError;
+
+        setImportStatus({
+          step: 'polling',
+          message: `Status: ${checkData.status} - ${checkData.object_count || 0} objects prepared`,
+          operationId,
+          objectCount: checkData.object_count
+        });
+
+        if (checkData.status === 'COMPLETED') {
+          completed = true;
+          url = checkData.url;
+          objectCount = checkData.object_count;
+          toast.success(`Export complete! ${objectCount} objects ready for import.`);
+        } else if (checkData.status === 'FAILED') {
+          throw new Error('Bulk operation failed');
+        }
+      }
+
+      // Step 3: Process and import
+      setImportStatus({ 
+        step: 'processing', 
+        message: `Importing ${objectCount} records...`, 
+        operationId,
+        url,
+        objectCount
+      });
+      toast.info("Downloading and importing orders...");
+
+      const { data: processData, error: processError } = await supabase.functions.invoke(
+        "shopify-bulk-import",
+        { body: { action: 'process', url, operation_id: operationId } }
+      );
+
+      if (processError) throw processError;
+
+      setImportStatus({
+        step: 'complete',
+        message: `Import completed! ${processData.records_imported} orders imported, ${processData.records_failed} failed.`,
+        objectCount: processData.records_imported
+      });
 
       toast.success(
-        `Import completed! ${data.records_imported} orders imported, ${data.records_failed} failed.`
+        `Import completed! ${processData.records_imported} orders imported.`
       );
+      
       refetch();
     } catch (error) {
-      console.error("Import error:", error);
+      console.error("Bulk import error:", error);
       toast.error("Failed to import orders. Check console for details.");
+      setImportStatus({
+        step: 'idle',
+        message: 'Import failed. Please try again.'
+      });
     } finally {
       setIsImporting(false);
     }
@@ -96,26 +177,46 @@ export default function Orders() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Import Orders</CardTitle>
+                <CardTitle>Bulk Import from Shopify</CardTitle>
                 <CardDescription>
-                  Import historical orders from Shopify (last 2 years)
+                  Import all historical orders (last 2 years) using GraphQL Bulk Operations
                 </CardDescription>
               </div>
-              <Button onClick={handleImport} disabled={isImporting}>
+              <Button onClick={handleBulkImport} disabled={isImporting}>
                 {isImporting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Importing...
+                    {importStatus.step === 'starting' && 'Starting...'}
+                    {importStatus.step === 'polling' && 'Waiting...'}
+                    {importStatus.step === 'processing' && 'Importing...'}
                   </>
                 ) : (
                   <>
                     <Download className="mr-2 h-4 w-4" />
-                    Import from Shopify
+                    Bulk Import
                   </>
                 )}
               </Button>
             </div>
           </CardHeader>
+          {(isImporting || importStatus.step !== 'idle') && (
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Status:</span>
+                  <Badge variant={importStatus.step === 'complete' ? 'default' : 'secondary'}>
+                    {importStatus.step}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{importStatus.message}</p>
+                {importStatus.objectCount && (
+                  <p className="text-sm font-medium">
+                    {importStatus.objectCount.toLocaleString()} objects
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          )}
           {importLogs && importLogs.length > 0 && (
             <CardContent>
               <div className="text-sm space-y-2">
