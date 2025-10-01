@@ -46,13 +46,15 @@ serve(async (req) => {
     let pageInfo = null;
 
     while (hasNextPage) {
-      // Build Shopify API URL
-      let url = `https://${shopifyDomain}/admin/api/2024-01/orders.json?status=any&created_at_min=${createdAtMin}&limit=250`;
+      // Build Shopify API URL - when using page_info, don't include other params
+      let url: string;
       if (pageInfo) {
-        url += `&page_info=${pageInfo}`;
+        url = `https://${shopifyDomain}/admin/api/2024-01/orders.json?limit=250&page_info=${pageInfo}`;
+      } else {
+        url = `https://${shopifyDomain}/admin/api/2024-01/orders.json?status=any&created_at_min=${createdAtMin}&limit=250`;
       }
 
-      console.log(`Fetching orders from Shopify: ${url}`);
+      console.log(`Fetching orders from Shopify (page ${Math.floor(recordsImported / 250) + 1})...`);
 
       const shopifyResponse = await fetch(url, {
         headers: {
