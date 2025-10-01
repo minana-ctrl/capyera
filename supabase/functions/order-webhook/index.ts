@@ -65,6 +65,12 @@ serve(async (req) => {
             continue;
           }
 
+          // Delete existing line items to prevent duplicates on re-import
+          await supabase
+            .from('order_line_items')
+            .delete()
+            .eq('order_id', orderData.id);
+
           // Insert line items
           if (order.lineItems?.edges) {
             for (const edge of order.lineItems.edges) {
@@ -80,7 +86,7 @@ serve(async (req) => {
               if (product) {
                 await supabase
                   .from('order_line_items')
-                  .upsert({
+                  .insert({
                     order_id: orderData.id,
                     product_id: product.id,
                     sku: item.sku,
@@ -88,16 +94,13 @@ serve(async (req) => {
                     quantity: item.quantity,
                     unit_price: product.unit_price,
                     total_price: product.unit_price * item.quantity,
-                  }, {
-                    onConflict: 'order_id,sku',
-                    ignoreDuplicates: false
                   });
               } else {
                 // Product not found - still insert line item with SKU for reference
                 console.warn(`Product not found for SKU: ${item.sku}`);
                 await supabase
                   .from('order_line_items')
-                  .upsert({
+                  .insert({
                     order_id: orderData.id,
                     product_id: null,
                     sku: item.sku,
@@ -105,9 +108,6 @@ serve(async (req) => {
                     quantity: item.quantity,
                     unit_price: 0,
                     total_price: 0,
-                  }, {
-                    onConflict: 'order_id,sku',
-                    ignoreDuplicates: false
                   });
               }
             }
