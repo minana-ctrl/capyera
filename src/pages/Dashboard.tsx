@@ -2,10 +2,19 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Package2, ShoppingCart, AlertTriangle } from "lucide-react";
+import { Package, Package2, ShoppingCart, AlertTriangle, TrendingUp } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { useState } from "react";
+import { subDays } from "date-fns";
+import { Badge } from "@/components/ui/badge";
 
 const Dashboard = () => {
+  const [dateRange, setDateRange] = useState({
+    from: subDays(new Date(), 30),
+    to: new Date(),
+  });
+
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
@@ -22,6 +31,27 @@ const Dashboard = () => {
         warehouses: warehousesRes.count || 0,
         pendingOrders: ordersRes.count || 0,
       };
+    },
+  });
+
+  const { data: categories } = useQuery({
+    queryKey: ["category-stats"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("categories")
+        .select(`
+          id,
+          name,
+          products (
+            id
+          )
+        `);
+      
+      if (error) throw error;
+      return data?.map(cat => ({
+        ...cat,
+        productCount: cat.products?.length || 0
+      }));
     },
   });
 
@@ -87,23 +117,49 @@ const Dashboard = () => {
 
         <Card>
           <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Sales Analytics
+              </CardTitle>
+              <DateRangeFilter onDateChange={(from, to) => setDateRange({ from, to })} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px] flex items-center justify-center border-2 border-dashed rounded-lg">
+              <div className="text-center text-muted-foreground">
+                <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Sales trend chart coming soon</p>
+                <p className="text-sm">Toggleable between Revenue and Units Sold</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              Welcome to Capiera Inventory
+              <Package2 className="h-5 w-5" />
+              Category Performance
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground mb-4">
-              Your inventory management system is fully operational with {stats?.products || 0} products 
-              and {stats?.bundles || 0} bundle configurations loaded and ready.
-            </p>
-            <div className="bg-muted p-4 rounded-lg">
-              <p className="text-sm font-medium mb-2">Quick Actions:</p>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• View and manage products in the Products section</li>
-                <li>• Configure bundles in the Bundles section</li>
-                <li>• Track inventory across warehouses</li>
-                <li>• Process sales orders and manage suppliers</li>
-              </ul>
+            <div className="grid gap-3 md:grid-cols-3">
+              {categories?.slice(0, 6).map((category) => (
+                <Card key={category.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{category.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {category.productCount} products
+                        </p>
+                      </div>
+                      <Badge variant="outline">{category.productCount}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </CardContent>
         </Card>

@@ -6,8 +6,10 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Inventory from "./pages/Inventory";
 import Products from "./pages/Products";
 import Bundles from "./pages/Bundles";
+import Timeline from "./pages/Timeline";
 import SalesOrders from "./pages/SalesOrders";
 import Warehouses from "./pages/Warehouses";
 import Suppliers from "./pages/Suppliers";
@@ -25,8 +27,10 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/inventory" element={<Inventory />} />
           <Route path="/products" element={<Products />} />
           <Route path="/bundles" element={<Bundles />} />
+          <Route path="/timeline" element={<Timeline />} />
           <Route path="/sales-orders" element={<SalesOrders />} />
           <Route path="/warehouses" element={<Warehouses />} />
           <Route path="/suppliers" element={<Suppliers />} />

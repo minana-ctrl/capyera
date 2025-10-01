@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Package } from "lucide-react";
+import { Package, Image as ImageIcon } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const Products = () => {
   const { data: products, isLoading } = useQuery({
@@ -55,6 +56,7 @@ const Products = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[80px]">Image</TableHead>
                       <TableHead>SKU</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Category</TableHead>
@@ -66,8 +68,20 @@ const Products = () => {
                   <TableBody>
                     {products?.map((product) => (
                       <TableRow key={product.id} className="hover:bg-muted/50">
+                        <TableCell>
+                          <Avatar className="h-12 w-12 rounded-md">
+                            <AvatarImage src={product.image_url || undefined} alt={product.name} />
+                            <AvatarFallback className="rounded-md bg-muted">
+                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                            </AvatarFallback>
+                          </Avatar>
+                        </TableCell>
                         <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                        <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell className="font-medium max-w-[300px]">
+                          <div className="truncate" title={product.name}>
+                            {product.name}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">
                             {product.categories?.name || "Uncategorized"}
