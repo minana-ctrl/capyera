@@ -31,7 +31,7 @@ serve(async (req) => {
       
       const bulkQuery = `
         {
-          orders(query: "created_at:>='${twoYearsAgo.toISOString().split('T')[0]}'") {
+          orders(query: "created_at:>=${twoYearsAgo.toISOString().split('T')[0]}") {
             edges {
               node {
                 id
@@ -43,18 +43,18 @@ serve(async (req) => {
                 cancelledAt
                 displayFinancialStatus
                 displayFulfillmentStatus
-                totalPriceSet {
+                currentTotalPriceSet {
                   shopMoney {
                     amount
                     currencyCode
                   }
                 }
-                subtotalPriceSet {
+                currentSubtotalPriceSet {
                   shopMoney {
                     amount
                   }
                 }
-                totalShippingPriceSet {
+                currentShippingPriceSet {
                   shopMoney {
                     amount
                   }
@@ -133,7 +133,7 @@ serve(async (req) => {
       const { data: importLog } = await supabase
         .from('import_logs')
         .insert({
-          import_type: 'shopify_bulk_orders',
+          import_type: 'shopify_orders',
           status: 'in_progress',
           file_name: bulkOp.id,
         })
@@ -198,9 +198,11 @@ serve(async (req) => {
           success: true,
           operation_id: bulkOp.id,
           status: bulkOp.status,
+          error_code: bulkOp.errorCode,
           object_count: bulkOp.objectCount,
           file_size: bulkOp.fileSize,
           url: bulkOp.url,
+          partial_data_url: bulkOp.partialDataUrl,
           message: bulkOp.status === 'COMPLETED' 
             ? 'Ready to process. Call with action=process' 
             : `Status: ${bulkOp.status}`
@@ -274,10 +276,10 @@ serve(async (req) => {
                 ? `${shopifyOrder.customer.firstName || ''} ${shopifyOrder.customer.lastName || ''}`.trim()
                 : 'Guest',
               customer_email: shopifyOrder.customer?.email || shopifyOrder.email,
-              total_amount: parseFloat(shopifyOrder.totalPriceSet?.shopMoney?.amount || '0'),
-              product_revenue: parseFloat(shopifyOrder.subtotalPriceSet?.shopMoney?.amount || '0'),
-              shipping_cost: parseFloat(shopifyOrder.totalShippingPriceSet?.shopMoney?.amount || '0'),
-              currency: shopifyOrder.totalPriceSet?.shopMoney?.currencyCode || 'USD',
+              total_amount: parseFloat(shopifyOrder.currentTotalPriceSet?.shopMoney?.amount || '0'),
+              product_revenue: parseFloat(shopifyOrder.currentSubtotalPriceSet?.shopMoney?.amount || '0'),
+              shipping_cost: parseFloat(shopifyOrder.currentShippingPriceSet?.shopMoney?.amount || '0'),
+              currency: shopifyOrder.currentTotalPriceSet?.shopMoney?.currencyCode || 'USD',
               placed_at: new Date(shopifyOrder.createdAt),
               fulfilled_at: shopifyOrder.displayFulfillmentStatus === 'FULFILLED' 
                 ? new Date(shopifyOrder.updatedAt) 
