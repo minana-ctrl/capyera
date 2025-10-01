@@ -76,6 +76,12 @@ serve(async (req) => {
             for (const edge of order.lineItems.edges) {
               const item = edge.node;
               
+              // Skip items without SKU
+              if (!item.sku) {
+                console.warn(`Skipping line item without SKU for order ${order.name}`);
+                continue;
+              }
+              
               // Find product by SKU
               const { data: product } = await supabase
                 .from('products')
