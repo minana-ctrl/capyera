@@ -69,7 +69,7 @@ serve(async (req) => {
                 .from('products')
                 .select('id, name, unit_price')
                 .eq('sku', item.sku)
-                .single();
+                .maybeSingle();
 
               if (product) {
                 await supabase
@@ -82,6 +82,20 @@ serve(async (req) => {
                     quantity: item.quantity,
                     unit_price: product.unit_price,
                     total_price: product.unit_price * item.quantity,
+                  });
+              } else {
+                // Product not found - still insert line item with SKU for reference
+                console.warn(`Product not found for SKU: ${item.sku}`);
+                await supabase
+                  .from('order_line_items')
+                  .insert({
+                    order_id: orderData.id,
+                    product_id: null,
+                    sku: item.sku,
+                    product_name: `Unknown Product (${item.sku})`,
+                    quantity: item.quantity,
+                    unit_price: 0,
+                    total_price: 0,
                   });
               }
             }
