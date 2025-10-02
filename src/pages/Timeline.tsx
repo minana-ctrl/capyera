@@ -123,6 +123,15 @@ const Timeline = () => {
     setSelectedProducts([]);
   };
 
+  const handleSelectAllInCategory = () => {
+    const categoryProducts = availableProducts.map((p) => p.id);
+    setSelectedProducts(categoryProducts);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedProducts([]);
+  };
+
   const hasActiveFilters = selectedCategory !== "all" || selectedProducts.length > 0;
 
   const availableProducts = useMemo(() => {
@@ -204,27 +213,118 @@ const Timeline = () => {
 
                 {availableProducts.length > 0 && (
                   <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      Product Selection ({selectedProducts.length} selected)
-                    </label>
-                    <div className="border rounded-lg p-4 max-h-48 overflow-y-auto">
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {availableProducts.slice(0, 50).map((product) => (
-                          <div key={product.id} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={product.id}
-                              checked={selectedProducts.includes(product.id)}
-                              onCheckedChange={() => handleToggleProduct(product.id)}
-                            />
-                            <label
-                              htmlFor={product.id}
-                              className="text-sm cursor-pointer truncate flex-1"
-                            >
-                              {product.name}
-                            </label>
-                          </div>
-                        ))}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium">
+                        Product Selection ({selectedProducts.length} of {availableProducts.length} selected)
+                      </label>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSelectAllInCategory}
+                          disabled={selectedProducts.length === availableProducts.length}
+                        >
+                          Select All {selectedCategory !== "all" ? `in ${selectedCategory}` : ""}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDeselectAll}
+                          disabled={selectedProducts.length === 0}
+                        >
+                          Deselect All
+                        </Button>
                       </div>
+                    </div>
+                    <div className="border rounded-lg p-4 max-h-64 overflow-y-auto">
+                      {selectedCategory === "all" ? (
+                        // Group by category when showing all
+                        <div className="space-y-4">
+                          {timelineData.categories.map((category) => {
+                            const categoryProducts = availableProducts.filter(
+                              (p) => p.category_name === category
+                            );
+                            if (categoryProducts.length === 0) return null;
+                            
+                            const allCategorySelected = categoryProducts.every((p) =>
+                              selectedProducts.includes(p.id)
+                            );
+                            const someCategorySelected = categoryProducts.some((p) =>
+                              selectedProducts.includes(p.id)
+                            );
+
+                            return (
+                              <div key={category} className="space-y-2">
+                                <div className="flex items-center gap-2 pb-2 border-b">
+                                  <Checkbox
+                                    id={`category-${category}`}
+                                    checked={allCategorySelected}
+                                    onCheckedChange={() => {
+                                      const categoryProductIds = categoryProducts.map((p) => p.id);
+                                      if (allCategorySelected) {
+                                        setSelectedProducts((prev) =>
+                                          prev.filter((id) => !categoryProductIds.includes(id))
+                                        );
+                                      } else {
+                                        setSelectedProducts((prev) =>
+                                          Array.from(new Set([...prev, ...categoryProductIds]))
+                                        );
+                                      }
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor={`category-${category}`}
+                                    className="font-semibold text-sm cursor-pointer flex-1"
+                                  >
+                                    {category} ({categoryProducts.length})
+                                  </label>
+                                  {someCategorySelected && !allCategorySelected && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      Partial
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pl-6">
+                                  {categoryProducts.map((product) => (
+                                    <div key={product.id} className="flex items-center space-x-2">
+                                      <Checkbox
+                                        id={product.id}
+                                        checked={selectedProducts.includes(product.id)}
+                                        onCheckedChange={() => handleToggleProduct(product.id)}
+                                      />
+                                      <label
+                                        htmlFor={product.id}
+                                        className="text-sm cursor-pointer truncate flex-1"
+                                      >
+                                        {product.name}
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        // Simple list when category is selected
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {availableProducts.map((product) => (
+                            <div key={product.id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={product.id}
+                                checked={selectedProducts.includes(product.id)}
+                                onCheckedChange={() => handleToggleProduct(product.id)}
+                              />
+                              <label
+                                htmlFor={product.id}
+                                className="text-sm cursor-pointer truncate flex-1"
+                              >
+                                {product.name}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
