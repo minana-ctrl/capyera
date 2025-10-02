@@ -14,6 +14,7 @@ import SalesOrders from "./pages/SalesOrders";
 import Orders from "./pages/Orders";
 import Warehouses from "./pages/Warehouses";
 import Suppliers from "./pages/Suppliers";
+import HowItWorks from "./pages/HowItWorks";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/sales-orders" element={<Navigate to="/orders" replace />} />
           <Route path="/warehouses" element={<ProtectedRoute><Warehouses /></ProtectedRoute>} />
           <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
+          <Route path="/how-it-works" element={<ProtectedRoute><HowItWorks /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

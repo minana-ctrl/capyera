@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Package2, ShoppingCart, Warehouse, Users, Settings } from "lucide-react";
+import { LayoutDashboard, Package, Package2, ShoppingCart, Warehouse, Users, Settings, HelpCircle } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import {
   Sidebar,
@@ -20,6 +20,7 @@ const menuItems = [
   { title: "Timeline", url: "/timeline", icon: LayoutDashboard },
   { title: "Warehouses", url: "/warehouses", icon: Warehouse },
   { title: "Suppliers", url: "/suppliers", icon: Users },
+  { title: "How It Works", url: "/how-it-works", icon: HelpCircle },
 ];
 
 export function AppSidebar() {
