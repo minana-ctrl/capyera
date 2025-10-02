@@ -1,356 +1,360 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, TrendingUp, Package, AlertTriangle } from "lucide-react";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Filter, X, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { format, addDays } from "date-fns";
-import { cn } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { addDays, format } from "date-fns";
+import { StockRunwayCalendar } from "@/components/timeline/StockRunwayCalendar";
+import { TimelineProductCard } from "@/components/timeline/TimelineProductCard";
+import { useInventoryData } from "@/hooks/useInventoryData";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
 const Timeline = () => {
-  const [dateRange, setDateRange] = useState<{ from: Date; to?: Date }>({
-    from: new Date(),
-    to: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-  });
-  const [velocityPeriod, setVelocityPeriod] = useState<"7d" | "14d" | "30d">("30d");
+  const [velocityPeriod, setVelocityPeriod] = useState<"7d" | "14d" | "30d" | "90d">("30d");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [filtersOpen, setFiltersOpen] = useState(true);
 
-  const { data: forecastData, isLoading } = useQuery({
-    queryKey: ["timeline-forecast", velocityPeriod],
-    queryFn: async () => {
-      const { data: stock } = await supabase
-        .from("warehouse_stock")
-        .select(`
-          *,
-          products (
-            id,
-            sku,
-            name
-          )
-        `);
+  const { data: inventoryData, isLoading } = useInventoryData();
 
-      if (!stock) return { products: [], stats: { avgRunway: 0, reorderNeeded: 0, stockoutRisk: 0 } };
+  // Calculate product runways and stockout dates
+  const timelineData = useMemo(() => {
+    if (!inventoryData) return { products: [], categories: [], stockoutEvents: [] };
 
-      // Calculate velocity from order history using SKU matching
-      const daysBack = velocityPeriod === "7d" ? 7 : velocityPeriod === "14d" ? 14 : 30;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - daysBack);
+    const velocityKey = velocityPeriod === "90d" ? "velocity_30d" : `velocity_${velocityPeriod}`;
+    const multiplier = velocityPeriod === "90d" ? 3 : 1;
 
-      const { data: lineItems } = await supabase
-        .from("order_line_items")
-        .select("sku, quantity")
-        .gte("created_at", startDate.toISOString());
+    const products = inventoryData.map((item) => {
+      const velocity = (item[velocityKey as keyof typeof item] as number) || 0;
+      const adjustedVelocity = velocityPeriod === "90d" ? velocity / multiplier : velocity;
+      const runway = adjustedVelocity > 0 ? Math.floor(item.available_stock / adjustedVelocity) : 999;
+      const stockoutDate = addDays(new Date(), runway);
 
-      // Aggregate quantities by SKU
-      const productSales = lineItems?.reduce((acc: any, item) => {
-        if (!acc[item.sku]) acc[item.sku] = 0;
-        acc[item.sku] += item.quantity;
-        return acc;
-      }, {}) || {};
-
-      // Calculate runway for each product using SKU matching
-      const products = stock.map((item: any) => {
-        const sku = item.products?.sku || '';
-        const totalSold = productSales[sku] || 0;
-        const dailyVelocity = totalSold / daysBack;
-        const availableStock = item.available_stock || 0;
-        const runway = dailyVelocity > 0 ? Math.floor(availableStock / dailyVelocity) : 999;
-        const stockoutDate = addDays(new Date(), runway);
-
-        return {
-          sku,
-          name: item.products?.name || 'Unknown Product',
-          available: availableStock,
-          velocity: dailyVelocity.toFixed(2),
-          runway,
-          stockoutDate,
-          status: runway < 7 ? 'critical' : runway < 14 ? 'warning' : 'good',
-          belowReorder: availableStock <= (item.reorder_point || 0),
-          parLevel: item.par_level || 0,
-        };
-      });
-
-      // Calculate stats
-      const productsWithSales = products.filter((p: any) => parseFloat(p.velocity) > 0);
-      const validProducts = productsWithSales.filter((p: any) => p.runway < 999);
-      const avgRunway = validProducts.length > 0
-        ? Math.floor(validProducts.reduce((sum: number, p: any) => sum + p.runway, 0) / validProducts.length)
-        : 0;
-      const reorderNeeded = products.filter((p: any) => p.belowReorder).length;
-      const stockoutRisk = productsWithSales.filter((p: any) => p.runway < 7).length;
-
-      // Prepare chart data - group by runway buckets
-      const runwayBuckets = [
-        { name: '0-7 days', count: 0, color: '#ef4444' },
-        { name: '8-14 days', count: 0, color: '#f97316' },
-        { name: '15-30 days', count: 0, color: '#eab308' },
-        { name: '31-60 days', count: 0, color: '#22c55e' },
-        { name: '60+ days', count: 0, color: '#3b82f6' },
-      ];
-
-      productsWithSales.forEach((p: any) => {
-        if (p.runway <= 7) runwayBuckets[0].count++;
-        else if (p.runway <= 14) runwayBuckets[1].count++;
-        else if (p.runway <= 30) runwayBuckets[2].count++;
-        else if (p.runway <= 60) runwayBuckets[3].count++;
-        else runwayBuckets[4].count++;
-      });
+      let status: "critical" | "warning" | "healthy";
+      if (item.available_stock === 0 || runway <= 7) {
+        status = "critical";
+      } else if (item.current_level <= item.par_level * 0.5 || runway <= 14) {
+        status = "warning";
+      } else {
+        status = "healthy";
+      }
 
       return {
-        products: productsWithSales.sort((a: any, b: any) => a.runway - b.runway).slice(0, 20),
-        stats: { avgRunway, reorderNeeded, stockoutRisk },
-        chartData: runwayBuckets,
-        allProducts: products,
+        ...item,
+        velocity: adjustedVelocity,
+        runway,
+        stockoutDate,
+        status,
       };
-    },
-  });
+    });
+
+    // Extract unique categories
+    const categories = Array.from(new Set(products.map((p) => p.category_name).filter(Boolean)));
+
+    // Group products by stockout date
+    const stockoutMap = new Map<string, typeof products>();
+    products.forEach((product) => {
+      if (product.runway < 999 && product.velocity > 0) {
+        const dateKey = format(product.stockoutDate, "yyyy-MM-dd");
+        if (!stockoutMap.has(dateKey)) {
+          stockoutMap.set(dateKey, []);
+        }
+        stockoutMap.get(dateKey)!.push(product);
+      }
+    });
+
+    const stockoutEvents = Array.from(stockoutMap.entries()).map(([dateKey, products]) => ({
+      date: new Date(dateKey),
+      products: products.map((p) => ({
+        sku: p.sku,
+        name: p.name,
+        available: p.available_stock,
+        status: p.status,
+      })),
+    }));
+
+    return { products, categories, stockoutEvents };
+  }, [inventoryData, velocityPeriod]);
+
+  // Apply filters
+  const filteredProducts = useMemo(() => {
+    let filtered = timelineData.products;
+
+    if (selectedCategory !== "all") {
+      filtered = filtered.filter((p) => p.category_name === selectedCategory);
+    }
+
+    if (selectedProducts.length > 0) {
+      filtered = filtered.filter((p) => selectedProducts.includes(p.id));
+    }
+
+    // Filter out products with no sales velocity
+    filtered = filtered.filter((p) => p.velocity > 0 && p.runway < 999);
+
+    return filtered.sort((a, b) => a.runway - b.runway);
+  }, [timelineData.products, selectedCategory, selectedProducts]);
+
+  // Get products for selected date
+  const selectedDateProducts = useMemo(() => {
+    if (!selectedDate) return [];
+    const event = timelineData.stockoutEvents.find((e) =>
+      format(e.date, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd")
+    );
+    return event?.products || [];
+  }, [selectedDate, timelineData.stockoutEvents]);
+
+  const handleToggleProduct = (productId: string) => {
+    setSelectedProducts((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
+    );
+  };
+
+  const handleClearFilters = () => {
+    setSelectedCategory("all");
+    setSelectedProducts([]);
+  };
+
+  const hasActiveFilters = selectedCategory !== "all" || selectedProducts.length > 0;
+
+  const availableProducts = useMemo(() => {
+    if (selectedCategory === "all") return timelineData.products;
+    return timelineData.products.filter((p) => p.category_name === selectedCategory);
+  }, [timelineData.products, selectedCategory]);
 
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold">Timeline & Forecasting</h2>
-            <p className="text-muted-foreground">Stock runway projections and reorder planning</p>
-          </div>
+        <div>
+          <h2 className="text-3xl font-bold">Stock Runway Timeline</h2>
+          <p className="text-muted-foreground">Visualize when products will run out based on sales velocity</p>
         </div>
 
+        {/* Forecast Controls */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Forecast Controls
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4 flex-wrap">
-              <div className="flex-1 min-w-[200px]">
-                <label className="text-sm font-medium mb-2 block">Date Range</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !dateRange && "text-muted-foreground"
-                      )}
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {dateRange?.from ? (
-                        dateRange.to ? (
-                          <>
-                            {format(dateRange.from, "LLL dd, y")} -{" "}
-                            {format(dateRange.to, "LLL dd, y")}
-                          </>
-                        ) : (
-                          format(dateRange.from, "LLL dd, y")
-                        )
-                      ) : (
-                        <span>Pick a date range</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="range"
-                      selected={dateRange}
-                      onSelect={(range: any) => setDateRange(range)}
-                      numberOfMonths={2}
-                      className="pointer-events-auto"
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="flex-1 min-w-[200px]">
-                <label className="text-sm font-medium mb-2 block">Velocity Calculation</label>
-                <Select value={velocityPeriod} onValueChange={(v) => setVelocityPeriod(v as "7d" | "14d" | "30d")}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="7d">Last 7 Days</SelectItem>
-                    <SelectItem value="14d">Last 14 Days</SelectItem>
-                    <SelectItem value="30d">Last 30 Days</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Forecast Controls
+              </CardTitle>
+              <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {filtersOpen ? (
+                      <>
+                        <ChevronUp className="h-4 w-4 mr-2" />
+                        Hide Filters
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-4 w-4 mr-2" />
+                        Show Filters
+                      </>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </Collapsible>
             </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Stock Runway</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{forecastData?.stats.avgRunway || 0} days</div>
-                  <p className="text-xs text-muted-foreground">Average across active products</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Reorder Needed</CardTitle>
-              <Package className="h-4 w-4 text-orange-500" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold text-orange-500">{forecastData?.stats.reorderNeeded || 0}</div>
-                  <p className="text-xs text-muted-foreground">Products below reorder point</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Stockout Risk</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold text-red-500">{forecastData?.stats.stockoutRisk || 0}</div>
-                  <p className="text-xs text-muted-foreground">Products at risk in next 7 days</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Stock Runway Distribution</CardTitle>
           </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[300px] w-full" />
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={forecastData?.chartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="name" 
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis 
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    label={{ value: 'Number of Products', angle: -90, position: 'insideLeft' }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '6px'
-                    }}
-                  />
-                  <Bar dataKey="count" name="Products" radius={[4, 4, 0, 0]}>
-                    {forecastData?.chartData.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+          <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <CollapsibleContent>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Category Filter</label>
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {timelineData.categories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Critical Products - Priority Reorder List</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[400px] w-full" />
-            ) : forecastData?.products && forecastData.products.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Available</TableHead>
-                    <TableHead className="text-right">Velocity/Day</TableHead>
-                    <TableHead className="text-right">Runway</TableHead>
-                    <TableHead>Projected Stockout</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {forecastData.products.map((product: any) => (
-                    <TableRow key={product.sku}>
-                      <TableCell>
-                        {product.status === 'critical' ? (
-                          <Badge variant="destructive">Critical</Badge>
-                        ) : product.status === 'warning' ? (
-                          <Badge className="bg-orange-500">Warning</Badge>
-                        ) : (
-                          <Badge variant="outline">Good</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                      <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell className="text-right">{product.available}</TableCell>
-                      <TableCell className="text-right">{product.velocity}</TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {product.runway} days
-                      </TableCell>
-                      <TableCell>
-                        {format(product.stockoutDate, 'MMM dd, yyyy')}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                <div className="text-center">
-                  <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  {forecastData?.allProducts && forecastData.allProducts.length > 0 ? (
-                    <>
-                      <p className="font-semibold">{forecastData.allProducts.length} products in stock</p>
-                      <p className="text-sm">No sales in the last {velocityPeriod === '7d' ? '7' : velocityPeriod === '14d' ? '14' : '30'} days</p>
-                      <p className="text-xs mt-2">Try selecting a different velocity period</p>
-                    </>
-                  ) : (
-                    <>
-                      <p>No inventory data available</p>
-                      <p className="text-sm">Import products and orders to see forecasts</p>
-                    </>
-                  )}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Velocity Calculation</label>
+                    <Select value={velocityPeriod} onValueChange={(v) => setVelocityPeriod(v as any)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="7d">Last 7 Days</SelectItem>
+                        <SelectItem value="14d">Last 14 Days</SelectItem>
+                        <SelectItem value="30d">Last 30 Days</SelectItem>
+                        <SelectItem value="90d">Last 90 Days (approx)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
+
+                {availableProducts.length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Product Selection ({selectedProducts.length} selected)
+                    </label>
+                    <div className="border rounded-lg p-4 max-h-48 overflow-y-auto">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {availableProducts.slice(0, 50).map((product) => (
+                          <div key={product.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={product.id}
+                              checked={selectedProducts.includes(product.id)}
+                              onCheckedChange={() => handleToggleProduct(product.id)}
+                            />
+                            <label
+                              htmlFor={product.id}
+                              className="text-sm cursor-pointer truncate flex-1"
+                            >
+                              {product.name}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {hasActiveFilters && (
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <span className="text-sm text-muted-foreground">Active Filters:</span>
+                    {selectedCategory !== "all" && (
+                      <Badge variant="secondary">
+                        Category: {selectedCategory}
+                        <button
+                          onClick={() => setSelectedCategory("all")}
+                          className="ml-2 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {selectedProducts.length > 0 && (
+                      <Badge variant="secondary">
+                        {selectedProducts.length} Products Selected
+                        <button
+                          onClick={() => setSelectedProducts([])}
+                          className="ml-2 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+                      Clear All
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
+
+        {/* Tabbed Views */}
+        {isLoading ? (
+          <Card>
+            <CardContent className="pt-6">
+              <Skeleton className="h-[600px] w-full" />
+            </CardContent>
+          </Card>
+        ) : (
+          <Tabs defaultValue="calendar" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="calendar">Calendar View</TabsTrigger>
+              <TabsTrigger value="timeline">Timeline View</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="calendar" className="space-y-4">
+              <StockRunwayCalendar
+                stockoutEvents={timelineData.stockoutEvents}
+                onDateSelect={setSelectedDate}
+                selectedDate={selectedDate}
+              />
+
+              {selectedDate && selectedDateProducts.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      Stock-Outs on {format(selectedDate, "MMMM dd, yyyy")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>SKU</TableHead>
+                          <TableHead>Product</TableHead>
+                          <TableHead className="text-right">Available</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedDateProducts.map((product) => (
+                          <TableRow key={product.sku}>
+                            <TableCell className="font-mono text-sm">{product.sku}</TableCell>
+                            <TableCell className="font-medium">{product.name}</TableCell>
+                            <TableCell className="text-right">{product.available}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={product.status === "critical" ? "destructive" : "secondary"}
+                                className={product.status === "warning" ? "bg-orange-500 text-white" : ""}
+                              >
+                                {product.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="timeline" className="space-y-4">
+              {filteredProducts.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {filteredProducts.map((product) => (
+                    <TimelineProductCard
+                      key={product.id}
+                      sku={product.sku}
+                      name={product.name}
+                      available={product.available_stock}
+                      velocity={product.velocity}
+                      runway={product.runway}
+                      stockoutDate={product.stockoutDate}
+                      status={product.status}
+                      parLevel={product.par_level}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    <p className="text-lg font-semibold">No products with sales velocity</p>
+                    <p className="text-sm mt-2">
+                      Products need sales history to calculate stock runway. Try selecting a different velocity period or category.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
       </div>
     </DashboardLayout>
   );
