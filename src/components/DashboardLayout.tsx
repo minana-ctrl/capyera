@@ -25,7 +25,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <header className="h-16 border-b flex items-center justify-between px-6 bg-card">
             <div className="flex items-center gap-4">
               <SidebarTrigger />
-              <h1 className="text-xl font-semibold">Capiera Inventory Management</h1>
+              <h1 className="text-xl font-semibold">Capyera Inventory Management</h1>
             </div>
             <Button variant="ghost" size="sm" onClick={handleSignOut}>
               <LogOut className="h-4 w-4 mr-2" />

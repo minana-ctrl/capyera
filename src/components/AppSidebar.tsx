@@ -31,7 +31,7 @@ export function AppSidebar() {
       <SidebarContent>
         <div className="p-4 border-b">
           <h2 className={`font-bold text-lg transition-opacity ${!open && "opacity-0"}`}>
-            Capiera
+            Capyera
           </h2>
         </div>
         
