@@ -133,9 +133,12 @@ const Products = () => {
   };
 
   const filteredProducts = products?.filter((product) => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = searchQuery === "" || 
+                         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          product.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === "all" || product.category_id === categoryFilter;
+    const matchesCategory = categoryFilter === "all" || 
+                           (categoryFilter === "uncategorized" && !product.category_id) ||
+                           product.category_id === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
@@ -203,6 +206,7 @@ const Products = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
+                      <SelectItem value="uncategorized">Uncategorized</SelectItem>
                       {categories?.map((cat) => (
                         <SelectItem key={cat.id} value={cat.id}>
                           {cat.name}
@@ -234,47 +238,50 @@ const Products = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredProducts?.map((product) => (
-                          <TableRow 
-                            key={product.id} 
-                            className="hover:bg-muted/50 cursor-pointer"
-                            onClick={() => handleProductClick(product)}
-                          >
-                            <TableCell>
-                              <Avatar className="h-12 w-12 rounded-md">
-                                <AvatarImage src={product.image_url || undefined} alt={product.name} />
-                                <AvatarFallback className="rounded-md bg-muted">
-                                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                                </AvatarFallback>
-                              </Avatar>
-                            </TableCell>
-                            <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                            <TableCell className="font-medium">
-                              {product.name}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">
-                                {product.categories?.name || "Uncategorized"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>${Number(product.unit_price).toFixed(2)}</TableCell>
-                            <TableCell>${Number(product.cost_price).toFixed(2)}</TableCell>
-                            <TableCell>
-                              {product.is_active ? (
-                                <Badge className="bg-green-500">Active</Badge>
-                              ) : (
-                                <Badge variant="secondary">Inactive</Badge>
-                              )}
+                        {filteredProducts && filteredProducts.length > 0 ? (
+                          filteredProducts.map((product) => (
+                            <TableRow 
+                              key={product.id} 
+                              className="hover:bg-muted/50 cursor-pointer"
+                              onClick={() => handleProductClick(product)}
+                            >
+                              <TableCell>
+                                <Avatar className="h-12 w-12 rounded-md">
+                                  <AvatarImage src={product.image_url || undefined} alt={product.name} />
+                                  <AvatarFallback className="rounded-md bg-muted">
+                                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                                  </AvatarFallback>
+                                </Avatar>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm">{product.sku}</TableCell>
+                              <TableCell className="font-medium">
+                                {product.name}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {product.categories?.name || "Uncategorized"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>${Number(product.unit_price).toFixed(2)}</TableCell>
+                              <TableCell>${Number(product.cost_price).toFixed(2)}</TableCell>
+                              <TableCell>
+                                {product.is_active ? (
+                                  <Badge className="bg-green-500">Active</Badge>
+                                ) : (
+                                  <Badge variant="secondary">Inactive</Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                              {searchQuery || categoryFilter !== "all" ? "No products match your filters" : "No products found"}
                             </TableCell>
                           </TableRow>
-                        ))}
+                        )}
                       </TableBody>
                     </Table>
-                  </div>
-                )}
-                {!productsLoading && filteredProducts?.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No products found
                   </div>
                 )}
               </CardContent>

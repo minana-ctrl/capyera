@@ -274,14 +274,14 @@ export const ProductFormDialog = ({ product, open, onOpenChange }: ProductFormDi
             <div className="space-y-2">
               <Label htmlFor="category_id">Category</Label>
               <Select
-                value={watch("category_id")}
-                onValueChange={(value) => setValue("category_id", value)}
+                value={watch("category_id") || "none"}
+                onValueChange={(value) => setValue("category_id", value === "none" ? "" : value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {categories?.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
                       {cat.name}
