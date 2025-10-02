@@ -5,18 +5,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Package, Image as ImageIcon, Package2, FolderTree, Search, ChevronRight } from "lucide-react";
+import { Package, Image as ImageIcon, Package2, FolderTree, Search, ChevronRight, Plus } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
-import { ProductDetailDialog } from "@/components/ProductDetailDialog";
+import { ProductFormDialog } from "@/components/ProductFormDialog";
+import { BundleFormDialog } from "@/components/BundleFormDialog";
+import { CategoryFormDialog } from "@/components/CategoryFormDialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
 
 const Products = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [productDialogOpen, setProductDialogOpen] = useState(false);
+  const [selectedBundle, setSelectedBundle] = useState<any>(null);
+  const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
+  const [selectedCategoryForEdit, setSelectedCategoryForEdit] = useState<any>(null);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -97,7 +104,32 @@ const Products = () => {
 
   const handleProductClick = (product: any) => {
     setSelectedProduct(product);
-    setDialogOpen(true);
+    setProductDialogOpen(true);
+  };
+
+  const handleBundleClick = (bundle: any) => {
+    setSelectedBundle(bundle);
+    setBundleDialogOpen(true);
+  };
+
+  const handleCategoryClick = (category: any) => {
+    setSelectedCategoryForEdit(category);
+    setCategoryDialogOpen(true);
+  };
+
+  const handleCreateProduct = () => {
+    setSelectedProduct(null);
+    setProductDialogOpen(true);
+  };
+
+  const handleCreateBundle = () => {
+    setSelectedBundle(null);
+    setBundleDialogOpen(true);
+  };
+
+  const handleCreateCategory = () => {
+    setSelectedCategoryForEdit(null);
+    setCategoryDialogOpen(true);
   };
 
   const filteredProducts = products?.filter((product) => {
@@ -119,6 +151,10 @@ const Products = () => {
             <h2 className="text-3xl font-bold">Products</h2>
             <p className="text-muted-foreground">Manage your product catalog</p>
           </div>
+          <Button onClick={handleCreateProduct}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Product
+          </Button>
         </div>
 
         <Tabs defaultValue="products" className="space-y-6">
@@ -141,10 +177,16 @@ const Products = () => {
           <TabsContent value="products">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Product Catalog
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    Product Catalog
+                  </CardTitle>
+                  <Button onClick={handleCreateProduct} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Product
+                  </Button>
+                </div>
                 <div className="flex gap-3 mt-4">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -243,10 +285,16 @@ const Products = () => {
           <TabsContent value="bundles">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package2 className="h-5 w-5" />
-                  Bundle Catalog
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Package2 className="h-5 w-5" />
+                    Bundle Catalog
+                  </CardTitle>
+                  <Button onClick={handleCreateBundle} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Bundle
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {bundlesLoading ? (
@@ -260,6 +308,18 @@ const Products = () => {
                     {bundles?.map((bundle: any) => (
                       <Collapsible key={bundle.id}>
                         <Card className="hover:shadow-md transition-shadow">
+                          <div className="absolute top-2 right-2 z-10">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBundleClick(bundle);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          </div>
                           <CollapsibleTrigger className="w-full">
                             <div className="flex items-center justify-between p-4">
                               <div className="flex items-center gap-4">
@@ -338,10 +398,16 @@ const Products = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FolderTree className="h-5 w-5" />
-                    Categories
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <FolderTree className="h-5 w-5" />
+                      Categories
+                    </CardTitle>
+                    <Button onClick={handleCreateCategory} size="sm">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Category
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {categoriesLoading ? (
@@ -355,12 +421,14 @@ const Products = () => {
                       {categories?.map((category) => (
                         <div
                           key={category.id}
-                          onClick={() => setSelectedCategory(category.id)}
-                          className={`p-4 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 ${
+                          className={`p-4 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 relative ${
                             selectedCategory === category.id ? 'bg-muted border-primary' : ''
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <div
+                            onClick={() => setSelectedCategory(category.id)}
+                            className="flex items-center justify-between"
+                          >
                             <div>
                               <h4 className="font-semibold">{category.name}</h4>
                               {category.description && (
@@ -371,6 +439,17 @@ const Products = () => {
                               {products?.filter((p) => p.category_id === category.id).length || 0} products
                             </Badge>
                           </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="absolute top-2 right-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCategoryClick(category);
+                            }}
+                          >
+                            Edit
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -433,10 +512,22 @@ const Products = () => {
           </TabsContent>
         </Tabs>
 
-        <ProductDetailDialog
+        <ProductFormDialog
           product={selectedProduct}
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
+          open={productDialogOpen}
+          onOpenChange={setProductDialogOpen}
+        />
+
+        <BundleFormDialog
+          bundle={selectedBundle}
+          open={bundleDialogOpen}
+          onOpenChange={setBundleDialogOpen}
+        />
+
+        <CategoryFormDialog
+          category={selectedCategoryForEdit}
+          open={categoryDialogOpen}
+          onOpenChange={setCategoryDialogOpen}
         />
       </div>
     </DashboardLayout>
