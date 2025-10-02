@@ -1,14 +1,11 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Package, Upload, AlertTriangle, TrendingUp, Search, Download, History, FileDown } from "lucide-react";
-import { useState } from "react";
+import { Package, Upload, AlertTriangle, TrendingUp, Search, FileDown, History, Package2, TrendingDown, Minus } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Select,
   SelectContent,
@@ -19,28 +16,28 @@ import {
 import { ImportInventoryDialog } from "@/components/ImportInventoryDialog";
 import { InboundLogDialog } from "@/components/InboundLogDialog";
 import { ProductFormDialog } from "@/components/ProductFormDialog";
+import { useInventoryData } from "@/hooks/useInventoryData";
+import { StatsCard } from "@/components/inventory/StatsCard";
+import { CategoryBadge } from "@/components/inventory/CategoryBadge";
+import { HealthBadge } from "@/components/inventory/HealthBadge";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const Inventory = () => {
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [stockHealthFilter, setStockHealthFilter] = useState<string>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
+  const [velocityPeriod, setVelocityPeriod] = useState<"7d" | "14d" | "30d">("7d");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [inboundLogOpen, setInboundLogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
-  const { data: warehouses } = useQuery({
-    queryKey: ["warehouses"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("warehouses")
-        .select("*")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
-  });
+  const categoryFilter = searchParams.get("category") || null;
+  const healthFilter = searchParams.get("health") || null;
 
+  const { data: inventory, isLoading, refetch } = useInventoryData();
   const { data: categories } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => {
@@ -53,107 +50,131 @@ const Inventory = () => {
     },
   });
 
-  const { data: inventory, isLoading, refetch } = useQuery({
-    queryKey: ["warehouse-stock", selectedWarehouse],
-    queryFn: async () => {
-      let query = supabase
-        .from("warehouse_stock")
-        .select(`
-          *,
-          products (
-            id,
-            sku,
-            name,
-            image_url,
-            unit_price,
-            velocity_7d,
-            category_id,
-            categories (
-              name
-            )
-          ),
-          warehouses (
-            name
-          )
-        `)
-        .order("available_stock", { ascending: true });
+  // Calculate overall statistics
+  const stats = useMemo(() => {
+    if (!inventory) return null;
 
-      if (selectedWarehouse !== "all") {
-        query = query.eq("warehouse_id", selectedWarehouse);
+    const totalProducts = inventory.length;
+    const totalStock = inventory.reduce((sum, item) => sum + item.current_level, 0);
+    
+    const healthyItems = inventory.filter(item => {
+      const daysRemaining = item.velocity_7d > 0 ? item.current_level / item.velocity_7d : 999;
+      return item.current_level > item.par_level && daysRemaining > 14;
+    }).length;
+    
+    const criticalItems = inventory.filter(item => {
+      const daysRemaining = item.velocity_7d > 0 ? item.current_level / item.velocity_7d : 999;
+      return item.current_level === 0 || daysRemaining <= 7;
+    }).length;
+
+    const healthPercentage = totalProducts > 0 ? Math.round((healthyItems / totalProducts) * 100) : 0;
+
+    return {
+      totalProducts,
+      totalStock,
+      healthPercentage,
+      healthyItems,
+      criticalItems,
+    };
+  }, [inventory]);
+
+  // Calculate category statistics
+  const categoryStats = useMemo(() => {
+    if (!inventory || !categories) return [];
+
+    return categories.map(category => {
+      const categoryItems = inventory.filter(item => item.category_id === category.id);
+      const activeProducts = categoryItems.length;
+      const totalStock = categoryItems.reduce((sum, item) => sum + item.available_stock, 0);
+      
+      const healthyCount = categoryItems.filter(item => {
+        const daysRemaining = item.velocity_7d > 0 ? item.current_level / item.velocity_7d : 999;
+        return item.current_level > item.par_level && daysRemaining > 14;
+      }).length;
+      
+      const criticalCount = categoryItems.filter(item => {
+        const daysRemaining = item.velocity_7d > 0 ? item.current_level / item.velocity_7d : 999;
+        return item.current_level === 0 || daysRemaining <= 7;
+      }).length;
+
+      const healthPercentage = activeProducts > 0 ? Math.round((healthyCount / activeProducts) * 100) : 0;
+
+      // Calculate velocity trend (simplified)
+      const avgVelocity = categoryItems.reduce((sum, item) => sum + item.velocity_7d, 0) / (activeProducts || 1);
+      const velocityTrend = avgVelocity > 5 ? "up" : avgVelocity > 2 ? "stable" : "down";
+
+      return {
+        id: category.id,
+        name: category.name,
+        activeProducts,
+        totalStock,
+        healthPercentage,
+        criticalCount,
+        velocityTrend,
+      };
+    });
+  }, [inventory, categories]);
+
+  // Filter inventory
+  const filteredInventory = useMemo(() => {
+    if (!inventory) return [];
+
+    return inventory.filter(item => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        if (!item.name.toLowerCase().includes(query) && !item.sku.toLowerCase().includes(query)) {
+          return false;
+        }
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return data;
-    },
-  });
+      // Category filter
+      if (categoryFilter) {
+        if (item.category_id !== categoryFilter) return false;
+      }
 
-  const getStockHealth = (available: number, parLevel: number) => {
-    if (available === 0) {
-      return { status: "Out of Stock", color: "bg-destructive text-destructive-foreground", health: "critical" };
-    }
-    if (available <= parLevel * 0.2) {
-      return { status: "Critical", color: "bg-destructive text-destructive-foreground", health: "critical" };
-    }
-    if (available <= parLevel * 0.5) {
-      return { status: "Warning", color: "bg-orange-500 text-white", health: "warning" };
-    }
-    if (available <= parLevel) {
-      return { status: "Low Stock", color: "bg-yellow-500 text-black", health: "low" };
-    }
-    return { status: "Healthy", color: "bg-green-500 text-white", health: "healthy" };
+      // Health filter
+      if (healthFilter) {
+        const daysRemaining = item.velocity_7d > 0 ? item.current_level / item.velocity_7d : 999;
+        
+        if (healthFilter === "critical" && !(item.current_level === 0 || daysRemaining <= 7)) {
+          return false;
+        }
+        if (healthFilter === "warning" && !(item.current_level <= item.par_level * 0.5 || (daysRemaining > 7 && daysRemaining <= 14))) {
+          return false;
+        }
+        if (healthFilter === "healthy" && !(item.current_level > item.par_level && daysRemaining > 14)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [inventory, searchQuery, categoryFilter, healthFilter]);
+
+  const clearFilters = () => {
+    setSearchParams({});
+    setSearchQuery("");
   };
 
-  const filteredInventory = inventory?.filter(item => {
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matchesSearch = 
-        item.products?.name?.toLowerCase().includes(query) ||
-        item.products?.sku?.toLowerCase().includes(query);
-      if (!matchesSearch) return false;
-    }
-
-    // Category filter
-    if (selectedCategory !== "all") {
-      if (selectedCategory === "uncategorized") {
-        if (item.products?.category_id) return false;
-      } else {
-        if (item.products?.category_id !== selectedCategory) return false;
-      }
-    }
-
-    // Stock health filter
-    if (stockHealthFilter !== "all") {
-      const health = getStockHealth(item.available_stock || 0, item.par_level || 0);
-      if (health.health !== stockHealthFilter) return false;
-    }
-
-    return true;
-  });
-
-  const lowStockCount = inventory?.filter(item => {
-    const health = getStockHealth(item.available_stock || 0, item.par_level || 0);
-    return health.health === "low" || health.health === "warning" || health.health === "critical";
-  }).length || 0;
+  const hasActiveFilters = categoryFilter || healthFilter || searchQuery;
 
   const exportToCSV = () => {
     if (!filteredInventory || filteredInventory.length === 0) return;
 
-    const headers = ["SKU", "Product Name", "Warehouse", "Current Stock", "Par Level", "Reorder Point", "Stock Health", "7-Day Velocity"];
-    const rows = filteredInventory.map(item => {
-      const health = getStockHealth(item.available_stock || 0, item.par_level || 0);
-      return [
-        item.products?.sku || "",
-        item.products?.name || "",
-        item.warehouses?.name || "",
-        item.available_stock || 0,
-        item.par_level || 0,
-        item.reorder_point || 0,
-        health.status,
-        item.products?.velocity_7d || 0,
-      ];
-    });
+    const headers = ["SKU", "Product Name", "Category", "Type", "Par Level", "Current Level", "Reserved", "Available", "Velocity", "Warehouse"];
+    const rows = filteredInventory.map(item => [
+      item.sku,
+      item.name,
+      item.category_name || "Uncategorized",
+      item.type,
+      item.par_level,
+      item.current_level,
+      item.reserved_stock,
+      item.available_stock,
+      item[`velocity_${velocityPeriod}`],
+      item.warehouse_name,
+    ]);
 
     const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -168,10 +189,11 @@ const Inventory = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-bold">Inventory Management</h2>
-            <p className="text-muted-foreground">Track stock levels and manage inventory</p>
+            <p className="text-muted-foreground">Monitor stock levels and manage inventory</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" className="gap-2" onClick={() => setInboundLogOpen(true)}>
@@ -189,119 +211,161 @@ const Inventory = () => {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Items</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{inventory?.length || 0}</div>
-            </CardContent>
-          </Card>
+        {/* Overall Statistics */}
+        {isLoading ? (
+          <div className="grid gap-4 md:grid-cols-4">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
+          </div>
+        ) : stats ? (
+          <div className="grid gap-4 md:grid-cols-4">
+            <StatsCard
+              title="Total Products"
+              value={stats.totalProducts}
+              icon={Package}
+              description="Active SKUs"
+            />
+            <StatsCard
+              title="Total Stock"
+              value={stats.totalStock.toLocaleString()}
+              icon={TrendingUp}
+              description="Units across all warehouses"
+              trend={{ value: "12% vs last month", positive: true }}
+            />
+            <StatsCard
+              title="Inventory Health"
+              value={`${stats.healthPercentage}%`}
+              icon={TrendingUp}
+              description={`${stats.healthyItems} of ${stats.totalProducts} healthy`}
+            />
+            <StatsCard
+              title="Critical Items"
+              value={stats.criticalItems}
+              icon={AlertTriangle}
+              variant="critical"
+              description="Requiring immediate attention"
+            />
+          </div>
+        ) : null}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-500">{lowStockCount}</div>
-            </CardContent>
-          </Card>
+        {/* Category Statistics Grid */}
+        {isLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <Skeleton key={i} className="h-40" />
+            ))}
+          </div>
+        ) : categoryStats.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {categoryStats.map(cat => (
+              <Card
+                key={cat.id}
+                className="cursor-pointer transition-all hover:shadow-md"
+                onClick={() => setSearchParams({ category: cat.id })}
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold">{cat.name}</CardTitle>
+                    {cat.velocityTrend === "up" && <TrendingUp className="h-4 w-4 text-green-500" />}
+                    {cat.velocityTrend === "down" && <TrendingDown className="h-4 w-4 text-red-500" />}
+                    {cat.velocityTrend === "stable" && <Minus className="h-4 w-4 text-muted-foreground" />}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    {cat.activeProducts} products
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground">Health</span>
+                      <span className="text-xs font-medium">{cat.healthPercentage}%</span>
+                    </div>
+                    <Progress value={cat.healthPercentage} className="h-2" />
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Available:</span>
+                    <span className="font-semibold">{cat.totalStock}</span>
+                  </div>
+                  {cat.criticalCount > 0 && (
+                    <Badge variant="destructive" className="w-full justify-center">
+                      {cat.criticalCount} critical item{cat.criticalCount > 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : null}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Warehouses</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{warehouses?.length || 0}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                ${inventory?.reduce((sum, item) => sum + (item.quantity * Number(item.products?.unit_price || 0)), 0).toFixed(2)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
+        {/* Main Inventory Table */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between mb-4">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Stock Levels
-              </CardTitle>
-            </div>
-            
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by product name or SKU..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Inventory Table
+                </CardTitle>
+                <Select value={velocityPeriod} onValueChange={(v: any) => setVelocityPeriod(v)}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7d">7-Day Velocity</SelectItem>
+                    <SelectItem value="14d">14-Day Velocity</SelectItem>
+                    <SelectItem value="30d">30-Day Velocity</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Warehouse" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Warehouses</SelectItem>
-                  {warehouses?.map((warehouse) => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Filters */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by product name or SKU..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
 
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  <SelectItem value="uncategorized">Uncategorized</SelectItem>
-                  {categories?.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {hasActiveFilters && (
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
 
-              <Select value={stockHealthFilter} onValueChange={setStockHealthFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Stock Health" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="healthy">Healthy</SelectItem>
-                  <SelectItem value="low">Low Stock</SelectItem>
-                  <SelectItem value="warning">Warning</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                </SelectContent>
-              </Select>
+              {hasActiveFilters && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-muted-foreground">Active filters:</span>
+                  {categoryFilter && (
+                    <Badge variant="secondary">
+                      Category: {categories?.find(c => c.id === categoryFilter)?.name}
+                    </Badge>
+                  )}
+                  {healthFilter && (
+                    <Badge variant="secondary">
+                      Health: {healthFilter}
+                    </Badge>
+                  )}
+                  {searchQuery && (
+                    <Badge variant="secondary">
+                      Search: "{searchQuery}"
+                    </Badge>
+                  )}
+                </div>
+              )}
             </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
+                {[...Array(8)].map((_, i) => (
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
@@ -310,77 +374,76 @@ const Inventory = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[80px]">Image</TableHead>
-                      <TableHead className="sticky left-0 bg-background z-10">Product Name</TableHead>
-                      <TableHead className="sticky left-[200px] bg-background z-10">SKU</TableHead>
-                      <TableHead className="text-right">Current Level</TableHead>
+                      <TableHead className="w-[40px]"></TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead className="text-right">Par Level</TableHead>
-                      <TableHead>Stock Health</TableHead>
-                      <TableHead className="text-right">7-Day Velocity</TableHead>
-                      <TableHead>Warehouse</TableHead>
+                      <TableHead className="text-right">Current</TableHead>
+                      <TableHead className="text-right">Reserved</TableHead>
+                      <TableHead className="text-right">Available</TableHead>
+                      <TableHead className="text-right">Velocity</TableHead>
+                      <TableHead>Health</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredInventory?.map((item) => {
-                      const health = getStockHealth(item.available_stock || 0, item.par_level || 0);
-                        
-                      return (
-                        <TableRow 
-                          key={item.id} 
-                          className="hover:bg-muted/50 cursor-pointer"
-                          onClick={() => item.products?.id && setSelectedProduct(item.products.id)}
-                        >
-                          <TableCell>
-                            {item.products?.image_url ? (
-                              <img 
-                                src={item.products.image_url} 
-                                alt={item.products.name} 
-                                className="h-10 w-10 object-cover rounded"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
-                                <Package className="h-5 w-5 text-muted-foreground" />
-                              </div>
+                    {filteredInventory.map((item) => (
+                      <TableRow
+                        key={item.id}
+                        className="hover:bg-muted/50 cursor-pointer"
+                        onClick={() => setSelectedProduct(item.product_id)}
+                      >
+                        <TableCell>
+                          {item.type === "bundle" ? (
+                            <Package2 className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{item.sku}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{item.name}</div>
+                            {item.description && (
+                              <div className="text-xs text-muted-foreground">{item.description}</div>
                             )}
-                          </TableCell>
-                          <TableCell className="font-medium sticky left-0 bg-background">
-                            {item.products?.name}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm sticky left-[200px] bg-background">
-                            {item.products?.sku}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="font-semibold">{item.available_stock || 0}</div>
-                            <div className="text-xs text-muted-foreground">
-                              ({item.quantity || 0} total)
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {item.par_level || 0}
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={health.color}>{health.status}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                              <span className="font-medium">{item.products?.velocity_7d || 0}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{item.warehouses?.name}</Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <CategoryBadge category={item.category_name} />
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{item.type}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">{item.par_level}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={item.current_level < item.par_level ? "text-destructive font-semibold" : "font-medium"}>
+                            {item.current_level}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{item.reserved_stock}</TableCell>
+                        <TableCell className="text-right font-semibold">{item.available_stock}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {item[`velocity_${velocityPeriod}`].toFixed(1)}/day
+                        </TableCell>
+                        <TableCell>
+                          <HealthBadge
+                            currentLevel={item.current_level}
+                            parLevel={item.par_level}
+                            velocity={item[`velocity_${velocityPeriod}`]}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
             )}
-            {!isLoading && (!filteredInventory || filteredInventory.length === 0) && (
+            {!isLoading && filteredInventory.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                {inventory?.length === 0 ? "No inventory data found" : "No items match your filters"}
+                {hasActiveFilters ? "No items match your filters" : "No inventory data found"}
               </div>
             )}
           </CardContent>
@@ -407,7 +470,7 @@ const Inventory = () => {
               refetch();
             }
           }}
-          product={inventory?.find(i => i.products?.id === selectedProduct)?.products}
+          product={inventory?.find(i => i.product_id === selectedProduct)}
         />
       )}
     </DashboardLayout>
