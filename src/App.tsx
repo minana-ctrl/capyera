@@ -9,7 +9,6 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
 import Products from "./pages/Products";
-import Bundles from "./pages/Bundles";
 import Timeline from "./pages/Timeline";
 import SalesOrders from "./pages/SalesOrders";
 import Orders from "./pages/Orders";
@@ -31,7 +30,7 @@ const App = () => (
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
           <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
-          <Route path="/bundles" element={<ProtectedRoute><Bundles /></ProtectedRoute>} />
+          <Route path="/bundles" element={<Navigate to="/products" replace />} />
           <Route path="/timeline" element={<ProtectedRoute><Timeline /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
           <Route path="/sales-orders" element={<Navigate to="/orders" replace />} />
