@@ -218,70 +218,64 @@ const Products = () => {
               </CardHeader>
               <CardContent>
                 {productsLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(5)].map((_, i) => (
-                      <Skeleton key={i} className="h-16 w-full" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {[...Array(8)].map((_, i) => (
+                      <Skeleton key={i} className="h-64 w-full" />
+                    ))}
+                  </div>
+                ) : filteredProducts && filteredProducts.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {filteredProducts.map((product) => (
+                      <Card 
+                        key={product.id}
+                        className="cursor-pointer hover:shadow-lg transition-all"
+                        onClick={() => handleProductClick(product)}
+                      >
+                        <CardContent className="p-0">
+                          <div className="aspect-square relative overflow-hidden rounded-t-lg bg-muted">
+                            {product.image_url ? (
+                              <img 
+                                src={product.image_url} 
+                                alt={product.name}
+                                className="object-cover w-full h-full"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <ImageIcon className="h-16 w-16 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="absolute top-2 right-2">
+                              {product.is_active ? (
+                                <Badge className="bg-green-500">Active</Badge>
+                              ) : (
+                                <Badge variant="secondary">Inactive</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            <p className="font-mono text-xs text-muted-foreground">{product.sku}</p>
+                            <h3 className="font-semibold line-clamp-2 min-h-[2.5rem]">{product.name}</h3>
+                            <Badge variant="outline" className="text-xs">
+                              {product.categories?.name || "Uncategorized"}
+                            </Badge>
+                            <div className="flex items-center justify-between pt-2 border-t">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Unit Price</p>
+                                <p className="font-semibold text-lg">${Number(product.unit_price).toFixed(2)}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs text-muted-foreground">Cost</p>
+                                <p className="font-medium">${Number(product.cost_price).toFixed(2)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[80px]">Image</TableHead>
-                          <TableHead>SKU</TableHead>
-                          <TableHead>Product Name</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Unit Price</TableHead>
-                          <TableHead>Cost Price</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredProducts && filteredProducts.length > 0 ? (
-                          filteredProducts.map((product) => (
-                            <TableRow 
-                              key={product.id} 
-                              className="hover:bg-muted/50 cursor-pointer"
-                              onClick={() => handleProductClick(product)}
-                            >
-                              <TableCell>
-                                <Avatar className="h-12 w-12 rounded-md">
-                                  <AvatarImage src={product.image_url || undefined} alt={product.name} />
-                                  <AvatarFallback className="rounded-md bg-muted">
-                                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                                  </AvatarFallback>
-                                </Avatar>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                              <TableCell className="font-medium">
-                                {product.name}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {product.categories?.name || "Uncategorized"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>${Number(product.unit_price).toFixed(2)}</TableCell>
-                              <TableCell>${Number(product.cost_price).toFixed(2)}</TableCell>
-                              <TableCell>
-                                {product.is_active ? (
-                                  <Badge className="bg-green-500">Active</Badge>
-                                ) : (
-                                  <Badge variant="secondary">Inactive</Badge>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                              {searchQuery || categoryFilter !== "all" ? "No products match your filters" : "No products found"}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                  <div className="text-center py-12 text-muted-foreground">
+                    {searchQuery || categoryFilter !== "all" ? "No products match your filters" : "No products found"}
                   </div>
                 )}
               </CardContent>

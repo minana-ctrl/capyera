@@ -347,30 +347,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* System Overview */}
-        <div>
-          <h3 className="text-lg font-semibold mb-3">System Overview</h3>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {systemCards.map((stat) => (
-            <Card key={stat.title} className="hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <stat.icon className={`h-5 w-5 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <Skeleton className="h-8 w-20" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold">{stat.value}</div>
-                    <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-          </div>
-        </div>
 
         {/* Top Products Today */}
         <div className="grid gap-4 md:grid-cols-2">
