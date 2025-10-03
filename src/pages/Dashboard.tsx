@@ -134,7 +134,7 @@ const Dashboard = () => {
   });
 
   const { data: salesTrend, isLoading: trendLoading } = useQuery({
-    queryKey: ["sales-trend", dateRange],
+    queryKey: ["sales-trend", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
       // Adjust date range boundaries to local timezone
       const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
@@ -186,7 +186,7 @@ const Dashboard = () => {
   });
 
   const { data: categories } = useQuery({
-    queryKey: ["category-stats", dateRange],
+    queryKey: ["category-stats", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
       const { data: categories } = await supabase
         .from("categories")

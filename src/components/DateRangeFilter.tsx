@@ -90,13 +90,18 @@ export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
             mode="range"
             selected={dateRange}
             onSelect={(range: any) => {
-              if (range?.from && range?.to) {
-                setDateRange(range);
-                onDateChange(range.from, range.to);
+              if (!range) return;
+              const from = range.from;
+              const to = range.to || range.from;
+              if (from) {
+                const updated = { from, to };
+                setDateRange(updated);
+                onDateChange(from, to);
               }
             }}
             numberOfMonths={2}
-            className="pointer-events-auto"
+            initialFocus
+            className={cn("p-3 pointer-events-auto")}
           />
         </PopoverContent>
       </Popover>
