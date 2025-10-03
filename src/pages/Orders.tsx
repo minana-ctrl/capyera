@@ -6,13 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
   const [isNormalImporting, setIsNormalImporting] = useState(false);
+  const [isSettingUpWebhooks, setIsSettingUpWebhooks] = useState(false);
   const [importStatus, setImportStatus] = useState<{
     step: 'idle' | 'starting' | 'polling' | 'processing' | 'complete';
     message: string;
@@ -179,6 +180,35 @@ export default function Orders() {
     }
   };
 
+  const handleSetupWebhooks = async () => {
+    setIsSettingUpWebhooks(true);
+    toast.info("Setting up Shopify webhooks...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("setup-shopify-webhooks");
+
+      if (error) throw error;
+
+      const successCount = data.results?.filter((r: any) => r.success).length || 0;
+      const totalCount = data.results?.length || 0;
+
+      if (successCount === totalCount) {
+        toast.success(`All ${successCount} webhooks configured successfully!`);
+      } else if (successCount > 0) {
+        toast.warning(`${successCount}/${totalCount} webhooks configured. Check logs for details.`);
+      } else {
+        toast.error("Failed to configure webhooks. Check your Shopify credentials.");
+      }
+
+      console.log("Webhook setup results:", data);
+    } catch (error: any) {
+      console.error("Webhook setup error:", error);
+      toast.error(`Failed to setup webhooks: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsSettingUpWebhooks(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       paid: "default",
@@ -269,6 +299,52 @@ export default function Orders() {
               </div>
             </CardContent>
           )}
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Live Webhook Integration</CardTitle>
+                <CardDescription>
+                  Configure Shopify webhooks to automatically sync new orders in real-time
+                </CardDescription>
+              </div>
+              <Button 
+                onClick={handleSetupWebhooks} 
+                disabled={isSettingUpWebhooks}
+                variant="outline"
+              >
+                {isSettingUpWebhooks ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Setting up...
+                  </>
+                ) : (
+                  <>
+                    <Webhook className="mr-2 h-4 w-4" />
+                    Setup Webhooks
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>This will automatically register webhooks for:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li><strong>Orders Created</strong> - Capture new orders and reserve inventory</li>
+                <li><strong>Orders Fulfilled</strong> - Deduct inventory when shipped</li>
+                <li><strong>Orders Cancelled</strong> - Release inventory reservations</li>
+                <li><strong>Orders Updated</strong> - Sync order status changes</li>
+              </ul>
+              <p className="mt-4 text-xs">
+                Webhook URL: <code className="bg-muted px-1 py-0.5 rounded">
+                  {window.location.origin.replace(window.location.host, 'sjydlxpogzbaxgbufwnp.supabase.co')}/functions/v1/shopify-webhook
+                </code>
+              </p>
+            </div>
+          </CardContent>
         </Card>
 
         <Card>
