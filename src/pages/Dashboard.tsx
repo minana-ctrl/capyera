@@ -155,13 +155,26 @@ const Dashboard = () => {
       const fromISO = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString();
       const toISO = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000).toISOString();
       
+      // Get orders in date range
       const { data: orders } = await supabase
         .from("orders")
-        .select("id, placed_at, total_amount, order_line_items(quantity)")
+        .select("id, placed_at, total_amount")
         .gte("placed_at", fromISO)
         .lt("placed_at", toISO)
         .order("placed_at")
         .range(0, 999999);
+
+      const orderIds = orders?.map(o => o.id) || [];
+
+      // Get line items for these orders
+      let lineItems: any[] = [];
+      if (orderIds.length > 0) {
+        const { data } = await supabase
+          .from("order_line_items")
+          .select("order_id, quantity")
+          .in("order_id", orderIds);
+        lineItems = data || [];
+      }
 
       // Create daily buckets using local dates
       const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
@@ -174,11 +187,11 @@ const Dashboard = () => {
           return orderDate >= dayStart && orderDate < dayEnd;
         }) || [];
 
+        const dayOrderIds = new Set(dayOrders.map(o => o.id));
+        const dayLineItems = lineItems.filter(item => dayOrderIds.has(item.order_id));
+
         const revenue = dayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
-        const units = dayOrders.reduce((sum, o) => {
-          const items = (o.order_line_items as any[]) || [];
-          return sum + items.reduce((itemSum, item) => itemSum + (item.quantity || 0), 0);
-        }, 0);
+        const units = dayLineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
         return {
           date: format(day, 'MMM dd'),
