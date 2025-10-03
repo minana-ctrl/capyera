@@ -25,12 +25,28 @@ export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
   ];
 
   const handlePresetClick = (days: number) => {
-    const to = days === 1 ? subDays(new Date(), 1) : new Date();
-    const from = days === 0 ? new Date() : subDays(to, days);
+    const now = new Date();
+    if (days === 0) {
+      // Today
+      const from = now;
+      const to = now;
+      setDateRange({ from, to });
+      onDateChange(from, to);
+      return;
+    }
+    if (days === 1) {
+      // Yesterday (single day)
+      const y = subDays(now, 1);
+      setDateRange({ from: y, to: y });
+      onDateChange(y, y);
+      return;
+    }
+    // Last N days = today and previous (N-1) days
+    const to = now;
+    const from = subDays(to, days - 1);
     setDateRange({ from, to });
     onDateChange(from, to);
   };
-
   return (
     <div className="flex gap-2 flex-wrap items-center">
       <div className="flex gap-2">

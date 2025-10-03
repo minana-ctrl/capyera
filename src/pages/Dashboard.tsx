@@ -148,13 +148,15 @@ const Dashboard = () => {
         .select("placed_at, total_amount")
         .gte("placed_at", fromISO)
         .lt("placed_at", toISO)
-        .order("placed_at");
+        .order("placed_at")
+        .range(0, 999999);
 
       const { data: lineItems } = await supabase
         .from("order_line_items")
         .select("created_at, quantity")
         .gte("created_at", fromISO)
-        .lt("created_at", toISO);
+        .lt("created_at", toISO)
+        .range(0, 999999);
 
       // Create daily buckets using local dates
       const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
