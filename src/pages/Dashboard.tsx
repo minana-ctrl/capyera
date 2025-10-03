@@ -18,17 +18,24 @@ const Dashboard = () => {
   });
   const [chartMetric, setChartMetric] = useState<'revenue' | 'units'>('revenue');
 
-  // Today's sales metrics
+  // Today's sales metrics - using local timezone date boundaries
   const { data: todayStats, isLoading: salesLoading } = useQuery({
     queryKey: ["sales-today"],
     queryFn: async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Get today's date at midnight in user's local timezone
+      const now = new Date();
+      const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      
+      // Convert to UTC for database query
+      const todayStart = new Date(localToday.getTime() - localToday.getTimezoneOffset() * 60000).toISOString();
+      const todayEnd = new Date(localTodayEnd.getTime() - localTodayEnd.getTimezoneOffset() * 60000).toISOString();
       
       const { data: orders } = await supabase
         .from("orders")
         .select("*")
-        .gte("placed_at", today.toISOString());
+        .gte("placed_at", todayStart)
+        .lt("placed_at", todayEnd);
 
       const totalRevenue = orders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const productRevenue = orders?.reduce((sum, o) => sum + Number(o.product_revenue), 0) || 0;
@@ -36,18 +43,20 @@ const Dashboard = () => {
       const orderCount = orders?.length || 0;
       const avgOrderValue = orderCount > 0 ? totalRevenue / orderCount : 0;
 
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+      // Get yesterday's date
+      const localYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const yesterdayStart = new Date(localYesterday.getTime() - localYesterday.getTimezoneOffset() * 60000).toISOString();
+      
       const { data: yesterdayOrders } = await supabase
         .from("orders")
         .select("total_amount")
-        .gte("placed_at", yesterday.toISOString())
-        .lt("placed_at", today.toISOString());
+        .gte("placed_at", yesterdayStart)
+        .lt("placed_at", todayStart);
 
       const yesterdayRevenue = yesterdayOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const revenueChange = yesterdayRevenue > 0 
         ? ((totalRevenue - yesterdayRevenue) / yesterdayRevenue) * 100 
-        : 0;
+        : totalRevenue > 0 ? 100 : 0;
 
       return {
         totalRevenue,
@@ -56,6 +65,7 @@ const Dashboard = () => {
         orderCount,
         avgOrderValue,
         revenueChange,
+        yesterdayRevenue, // Include for debugging
       };
     },
     refetchInterval: 300000, // Auto-refresh every 5 minutes
@@ -64,8 +74,12 @@ const Dashboard = () => {
   const { data: topProducts } = useQuery({
     queryKey: ["top-products-today"],
     queryFn: async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Use same date calculation as todayStats for consistency
+      const now = new Date();
+      const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const todayStart = new Date(localToday.getTime() - localToday.getTimezoneOffset() * 60000).toISOString();
+      const todayEnd = new Date(localTodayEnd.getTime() - localTodayEnd.getTimezoneOffset() * 60000).toISOString();
       
       const { data } = await supabase
         .from("order_line_items")
@@ -75,7 +89,8 @@ const Dashboard = () => {
           quantity,
           total_price
         `)
-        .gte("created_at", today.toISOString());
+        .gte("created_at", todayStart)
+        .lt("created_at", todayEnd);
 
       const aggregated = data?.reduce((acc: any, item) => {
         if (!acc[item.sku]) {
@@ -121,29 +136,41 @@ const Dashboard = () => {
   const { data: salesTrend, isLoading: trendLoading } = useQuery({
     queryKey: ["sales-trend", dateRange],
     queryFn: async () => {
+      // Adjust date range boundaries to local timezone
+      const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
+      const toDate = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate() + 1);
+      
+      const fromISO = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString();
+      const toISO = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000).toISOString();
+      
       const { data: orders } = await supabase
         .from("orders")
         .select("placed_at, total_amount")
-        .gte("placed_at", dateRange.from.toISOString())
-        .lte("placed_at", dateRange.to.toISOString())
+        .gte("placed_at", fromISO)
+        .lt("placed_at", toISO)
         .order("placed_at");
 
       const { data: lineItems } = await supabase
         .from("order_line_items")
         .select("created_at, quantity")
-        .gte("created_at", dateRange.from.toISOString())
-        .lte("created_at", dateRange.to.toISOString());
+        .gte("created_at", fromISO)
+        .lt("created_at", toISO);
 
-      // Create daily buckets
+      // Create daily buckets using local dates
       const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
       const dailyData = days.map(day => {
-        const dayStr = format(day, 'yyyy-MM-dd');
-        const dayOrders = orders?.filter(o => 
-          format(new Date(o.placed_at), 'yyyy-MM-dd') === dayStr
-        ) || [];
-        const dayItems = lineItems?.filter(i => 
-          format(new Date(i.created_at), 'yyyy-MM-dd') === dayStr
-        ) || [];
+        const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+        const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+        
+        const dayOrders = orders?.filter(o => {
+          const orderDate = new Date(o.placed_at);
+          return orderDate >= dayStart && orderDate < dayEnd;
+        }) || [];
+        
+        const dayItems = lineItems?.filter(i => {
+          const itemDate = new Date(i.created_at);
+          return itemDate >= dayStart && itemDate < dayEnd;
+        }) || [];
 
         return {
           date: format(day, 'MMM dd'),
@@ -165,6 +192,12 @@ const Dashboard = () => {
 
       if (!categories) return [];
 
+      // Adjust date range to local timezone
+      const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
+      const toDate = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate() + 1);
+      const fromISO = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString();
+      const toISO = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000).toISOString();
+
       // Get sales per category in date range using SKU matching
       const categoryStats = await Promise.all(
         categories.map(async (cat) => {
@@ -183,8 +216,8 @@ const Dashboard = () => {
             .from("order_line_items")
             .select("quantity, total_price")
             .in("sku", productSkus)
-            .gte("created_at", dateRange.from.toISOString())
-            .lte("created_at", dateRange.to.toISOString());
+            .gte("created_at", fromISO)
+            .lt("created_at", toISO);
 
           const revenue = lineItems?.reduce((sum, i) => sum + Number(i.total_price), 0) || 0;
           const units = lineItems?.reduce((sum, i) => sum + i.quantity, 0) || 0;
@@ -442,6 +475,10 @@ const Dashboard = () => {
           <CardContent>
             {trendLoading ? (
               <Skeleton className="h-[350px] w-full" />
+            ) : !salesTrend || salesTrend.length === 0 ? (
+              <div className="h-[350px] flex items-center justify-center text-muted-foreground">
+                No sales data available for selected period
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={350}>
                 <LineChart data={salesTrend}>
