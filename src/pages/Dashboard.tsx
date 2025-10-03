@@ -81,6 +81,19 @@ const Dashboard = () => {
       const todayStart = new Date(localToday.getTime() - localToday.getTimezoneOffset() * 60000).toISOString();
       const todayEnd = new Date(localTodayEnd.getTime() - localTodayEnd.getTimezoneOffset() * 60000).toISOString();
       
+      // First get order IDs from today based on placed_at
+      const { data: todayOrders } = await supabase
+        .from("orders")
+        .select("id")
+        .gte("placed_at", todayStart)
+        .lt("placed_at", todayEnd);
+
+      const orderIds = todayOrders?.map(o => o.id) || [];
+
+      if (orderIds.length === 0) {
+        return { byUnits: [], byRevenue: [] };
+      }
+
       const { data } = await supabase
         .from("order_line_items")
         .select(`
@@ -89,8 +102,7 @@ const Dashboard = () => {
           quantity,
           total_price
         `)
-        .gte("created_at", todayStart)
-        .lt("created_at", todayEnd);
+        .in("order_id", orderIds);
 
       const aggregated = data?.reduce((acc: any, item) => {
         if (!acc[item.sku]) {
@@ -145,17 +157,10 @@ const Dashboard = () => {
       
       const { data: orders } = await supabase
         .from("orders")
-        .select("placed_at, total_amount")
+        .select("id, placed_at, total_amount, order_line_items(quantity)")
         .gte("placed_at", fromISO)
         .lt("placed_at", toISO)
         .order("placed_at")
-        .range(0, 999999);
-
-      const { data: lineItems } = await supabase
-        .from("order_line_items")
-        .select("created_at, quantity")
-        .gte("created_at", fromISO)
-        .lt("created_at", toISO)
         .range(0, 999999);
 
       // Create daily buckets using local dates
@@ -168,16 +173,17 @@ const Dashboard = () => {
           const orderDate = new Date(o.placed_at);
           return orderDate >= dayStart && orderDate < dayEnd;
         }) || [];
-        
-        const dayItems = lineItems?.filter(i => {
-          const itemDate = new Date(i.created_at);
-          return itemDate >= dayStart && itemDate < dayEnd;
-        }) || [];
+
+        const revenue = dayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+        const units = dayOrders.reduce((sum, o) => {
+          const items = (o.order_line_items as any[]) || [];
+          return sum + items.reduce((itemSum, item) => itemSum + (item.quantity || 0), 0);
+        }, 0);
 
         return {
           date: format(day, 'MMM dd'),
-          revenue: dayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0),
-          units: dayItems.reduce((sum, i) => sum + i.quantity, 0),
+          revenue,
+          units,
         };
       });
 
@@ -200,6 +206,19 @@ const Dashboard = () => {
       const fromISO = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString();
       const toISO = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000).toISOString();
 
+      // First get order IDs in the date range
+      const { data: ordersInRange } = await supabase
+        .from("orders")
+        .select("id")
+        .gte("placed_at", fromISO)
+        .lt("placed_at", toISO);
+
+      const orderIds = ordersInRange?.map(o => o.id) || [];
+
+      if (orderIds.length === 0) {
+        return categories.map(cat => ({ ...cat, revenue: 0, units: 0 }));
+      }
+
       // Get sales per category in date range using SKU matching
       const categoryStats = await Promise.all(
         categories.map(async (cat) => {
@@ -216,10 +235,9 @@ const Dashboard = () => {
 
           const { data: lineItems } = await supabase
             .from("order_line_items")
-            .select("quantity, total_price")
+            .select("quantity, total_price, order_id")
             .in("sku", productSkus)
-            .gte("created_at", fromISO)
-            .lt("created_at", toISO);
+            .in("order_id", orderIds);
 
           const revenue = lineItems?.reduce((sum, i) => sum + Number(i.total_price), 0) || 0;
           const units = lineItems?.reduce((sum, i) => sum + i.quantity, 0) || 0;
