@@ -33,7 +33,7 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const shopifyToken = Deno.env.get('SHOPIFY_ACCESS_TOKEN')!;
+    const webhookSecret = Deno.env.get('SHOPIFY_WEBHOOK_SECRET')!;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -44,8 +44,8 @@ serve(async (req) => {
 
     const bodyText = await req.text();
     
-    // Verify webhook signature
-    if (hmacHeader && !(await verifyShopifyWebhook(bodyText, hmacHeader, shopifyToken))) {
+    // Verify webhook signature using webhook secret (not access token)
+    if (hmacHeader && !(await verifyShopifyWebhook(bodyText, hmacHeader, webhookSecret))) {
       console.error('Invalid webhook signature');
       return new Response(JSON.stringify({ error: 'Invalid signature' }), {
         status: 401,
