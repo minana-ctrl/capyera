@@ -28,8 +28,8 @@ const Dashboard = () => {
       const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       
       // Convert to UTC for database query
-       const todayStart = new Date(localToday.getTime() + localToday.getTimezoneOffset() * 60000).toISOString();
-       const todayEnd = new Date(localTodayEnd.getTime() + localTodayEnd.getTimezoneOffset() * 60000).toISOString();
+       const todayStart = localToday.toISOString();
+       const todayEnd = localTodayEnd.toISOString();
       
       const { data: orders } = await supabase
         .from("orders")
@@ -45,7 +45,7 @@ const Dashboard = () => {
 
       // Get yesterday's date
       const localYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      const yesterdayStart = new Date(localYesterday.getTime() - localYesterday.getTimezoneOffset() * 60000).toISOString();
+      const yesterdayStart = localYesterday.toISOString();
       
       const { data: yesterdayOrders } = await supabase
         .from("orders")
@@ -78,8 +78,8 @@ const Dashboard = () => {
       const now = new Date();
       const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-       const todayStart = new Date(localToday.getTime() + localToday.getTimezoneOffset() * 60000).toISOString();
-       const todayEnd = new Date(localTodayEnd.getTime() + localTodayEnd.getTimezoneOffset() * 60000).toISOString();
+        const todayStart = localToday.toISOString();
+        const todayEnd = localTodayEnd.toISOString();
       
       // First get order IDs from today based on placed_at
       const { data: todayOrders } = await supabase
@@ -163,8 +163,8 @@ const Dashboard = () => {
       const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
       const toDate = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate() + 1);
       
-       const fromISO = new Date(fromDate.getTime() + fromDate.getTimezoneOffset() * 60000).toISOString();
-       const toISO = new Date(toDate.getTime() + toDate.getTimezoneOffset() * 60000).toISOString();
+       const fromISO = fromDate.toISOString();
+       const toISO = toDate.toISOString();
       
       // Get orders in date range
       const { data: orders } = await supabase
