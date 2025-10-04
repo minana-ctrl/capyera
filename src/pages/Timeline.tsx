@@ -101,14 +101,40 @@ const Timeline = () => {
     return filtered.sort((a, b) => a.runway - b.runway);
   }, [timelineData.products, selectedCategory, selectedProducts]);
 
+  // Create filtered stockout events based on filtered products
+  const filteredStockoutEvents = useMemo(() => {
+    const filteredProductIds = new Set(filteredProducts.map(p => p.id));
+    const stockoutMap = new Map<string, typeof filteredProducts>();
+    
+    filteredProducts.forEach((product) => {
+      if (product.runway < 999 && product.velocity > 0) {
+        const dateKey = format(product.stockoutDate, "yyyy-MM-dd");
+        if (!stockoutMap.has(dateKey)) {
+          stockoutMap.set(dateKey, []);
+        }
+        stockoutMap.get(dateKey)!.push(product);
+      }
+    });
+
+    return Array.from(stockoutMap.entries()).map(([dateKey, products]) => ({
+      date: new Date(dateKey),
+      products: products.map((p) => ({
+        sku: p.sku,
+        name: p.name,
+        available: p.available_stock,
+        status: p.status,
+      })),
+    }));
+  }, [filteredProducts]);
+
   // Get products for selected date
   const selectedDateProducts = useMemo(() => {
     if (!selectedDate) return [];
-    const event = timelineData.stockoutEvents.find((e) =>
+    const event = filteredStockoutEvents.find((e) =>
       format(e.date, "yyyy-MM-dd") === format(selectedDate, "yyyy-MM-dd")
     );
     return event?.products || [];
-  }, [selectedDate, timelineData.stockoutEvents]);
+  }, [selectedDate, filteredStockoutEvents]);
 
   const handleToggleProduct = (productId: string) => {
     setSelectedProducts((prev) =>
@@ -380,7 +406,7 @@ const Timeline = () => {
 
             <TabsContent value="calendar" className="space-y-4">
               <StockRunwayCalendar
-                stockoutEvents={timelineData.stockoutEvents}
+                stockoutEvents={filteredStockoutEvents}
                 onDateSelect={setSelectedDate}
                 selectedDate={selectedDate}
               />
