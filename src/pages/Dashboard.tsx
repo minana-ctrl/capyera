@@ -28,8 +28,8 @@ const Dashboard = () => {
       const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       
       // Convert to UTC for database query
-      const todayStart = new Date(localToday.getTime() - localToday.getTimezoneOffset() * 60000).toISOString();
-      const todayEnd = new Date(localTodayEnd.getTime() - localTodayEnd.getTimezoneOffset() * 60000).toISOString();
+       const todayStart = new Date(localToday.getTime() + localToday.getTimezoneOffset() * 60000).toISOString();
+       const todayEnd = new Date(localTodayEnd.getTime() + localTodayEnd.getTimezoneOffset() * 60000).toISOString();
       
       const { data: orders } = await supabase
         .from("orders")
@@ -78,8 +78,8 @@ const Dashboard = () => {
       const now = new Date();
       const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      const todayStart = new Date(localToday.getTime() - localToday.getTimezoneOffset() * 60000).toISOString();
-      const todayEnd = new Date(localTodayEnd.getTime() - localTodayEnd.getTimezoneOffset() * 60000).toISOString();
+       const todayStart = new Date(localToday.getTime() + localToday.getTimezoneOffset() * 60000).toISOString();
+       const todayEnd = new Date(localTodayEnd.getTime() + localTodayEnd.getTimezoneOffset() * 60000).toISOString();
       
       // First get order IDs from today based on placed_at
       const { data: todayOrders } = await supabase
@@ -94,15 +94,26 @@ const Dashboard = () => {
         return { byUnits: [], byRevenue: [] };
       }
 
-      const { data } = await supabase
-        .from("order_line_items")
-        .select(`
-          sku,
-          product_name,
-          quantity,
-          total_price
-        `)
-        .in("order_id", orderIds);
+       const chunkSize = 100;
+       const chunks = Array.from({ length: Math.ceil(orderIds.length / chunkSize) }, (_, i) =>
+         orderIds.slice(i * chunkSize, (i + 1) * chunkSize)
+       );
+       const results = await Promise.all(
+         chunks.map(async (ids) => {
+           const { data } = await supabase
+             .from("order_line_items")
+             .select(`
+               sku,
+               product_name,
+               quantity,
+               total_price
+             `)
+             .in("order_id", ids);
+           return data || [];
+         })
+       );
+
+       const data = results.flat();
 
       const aggregated = data?.reduce((acc: any, item) => {
         if (!acc[item.sku]) {
@@ -152,8 +163,8 @@ const Dashboard = () => {
       const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
       const toDate = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate() + 1);
       
-      const fromISO = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString();
-      const toISO = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000).toISOString();
+       const fromISO = new Date(fromDate.getTime() + fromDate.getTimezoneOffset() * 60000).toISOString();
+       const toISO = new Date(toDate.getTime() + toDate.getTimezoneOffset() * 60000).toISOString();
       
       // Get orders in date range
       const { data: orders } = await supabase
@@ -168,13 +179,22 @@ const Dashboard = () => {
 
       // Get line items for these orders
       let lineItems: any[] = [];
-      if (orderIds.length > 0) {
-        const { data } = await supabase
-          .from("order_line_items")
-          .select("order_id, quantity")
-          .in("order_id", orderIds);
-        lineItems = data || [];
-      }
+       if (orderIds.length > 0) {
+         const chunkSize = 100;
+         const chunks = Array.from({ length: Math.ceil(orderIds.length / chunkSize) }, (_, i) =>
+           orderIds.slice(i * chunkSize, (i + 1) * chunkSize)
+         );
+         const results = await Promise.all(
+           chunks.map(async (ids) => {
+             const { data } = await supabase
+               .from("order_line_items")
+               .select("order_id, quantity")
+               .in("order_id", ids);
+             return data || [];
+           })
+         );
+         lineItems = results.flat();
+       }
 
       // Create daily buckets using local dates
       const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
