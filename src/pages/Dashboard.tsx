@@ -4,19 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { useState } from "react";
-import { subDays, format, eachDayOfInterval } from "date-fns";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { SalesTrendCard } from "@/components/dashboard/SalesTrendCard";
 
 const Dashboard = () => {
-  const [dateRange, setDateRange] = useState({
-    from: subDays(new Date(), 30),
-    to: new Date(),
-  });
-  const [chartMetric, setChartMetric] = useState<'revenue' | 'units'>('revenue');
 
   // Today's sales metrics - using local timezone date boundaries
   const { data: todayStats, isLoading: salesLoading } = useQuery({
@@ -155,75 +145,6 @@ const Dashboard = () => {
       };
     },
   });
-
-  const { data: salesTrend, isLoading: trendLoading } = useQuery({
-    queryKey: ["sales-trend", dateRange.from.toISOString(), dateRange.to.toISOString()],
-    queryFn: async () => {
-      // Adjust date range boundaries to local timezone
-      const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
-      const toDate = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate() + 1);
-      
-       const fromISO = fromDate.toISOString();
-       const toISO = toDate.toISOString();
-      
-      // Get orders in date range
-      const { data: orders } = await supabase
-        .from("orders")
-        .select("id, placed_at, total_amount")
-        .gte("placed_at", fromISO)
-        .lt("placed_at", toISO)
-        .order("placed_at")
-        .range(0, 999999);
-
-      const orderIds = orders?.map(o => o.id) || [];
-
-      // Get line items for these orders
-      let lineItems: any[] = [];
-       if (orderIds.length > 0) {
-         const chunkSize = 100;
-         const chunks = Array.from({ length: Math.ceil(orderIds.length / chunkSize) }, (_, i) =>
-           orderIds.slice(i * chunkSize, (i + 1) * chunkSize)
-         );
-         const results = await Promise.all(
-           chunks.map(async (ids) => {
-             const { data } = await supabase
-               .from("order_line_items")
-               .select("order_id, quantity")
-               .in("order_id", ids);
-             return data || [];
-           })
-         );
-         lineItems = results.flat();
-       }
-
-      // Create daily buckets using local dates
-      const days = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
-      const dailyData = days.map(day => {
-        const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-        const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
-        
-        const dayOrders = orders?.filter(o => {
-          const orderDate = new Date(o.placed_at);
-          return orderDate >= dayStart && orderDate < dayEnd;
-        }) || [];
-
-        const dayOrderIds = new Set(dayOrders.map(o => o.id));
-        const dayLineItems = lineItems.filter(item => dayOrderIds.has(item.order_id));
-
-        const revenue = dayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
-        const units = dayLineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
-
-        return {
-          date: format(day, 'MMM dd'),
-          revenue,
-          units,
-        };
-      });
-
-      return dailyData;
-    },
-  });
-
 
   const getChangeIcon = (change: number) => {
     if (change > 0) return <TrendingUp className="h-4 w-4 text-green-500" />;
@@ -448,71 +369,7 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Sales Trend
-              </CardTitle>
-              <div className="flex items-center gap-4">
-                <Tabs value={chartMetric} onValueChange={(v) => setChartMetric(v as 'revenue' | 'units')}>
-                  <TabsList>
-                    <TabsTrigger value="revenue">Revenue</TabsTrigger>
-                    <TabsTrigger value="units">Units Sold</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <DateRangeFilter onDateChange={(from, to) => setDateRange({ from, to })} />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {trendLoading ? (
-              <Skeleton className="h-[350px] w-full" />
-            ) : !salesTrend || salesTrend.length === 0 ? (
-              <div className="h-[350px] flex items-center justify-center text-muted-foreground">
-                No sales data available for selected period
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={salesTrend}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="date" 
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis 
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    tickFormatter={(value) => 
-                      chartMetric === 'revenue' ? `$${value.toFixed(0)}` : value
-                    }
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '6px'
-                    }}
-                    formatter={(value: number) => 
-                      chartMetric === 'revenue' ? `$${value.toFixed(2)}` : value
-                    }
-                  />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey={chartMetric} 
-                    name={chartMetric === 'revenue' ? 'Revenue' : 'Units Sold'}
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={2}
-                    dot={{ fill: 'hsl(var(--primary))' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+        <SalesTrendCard />
 
       </div>
     </DashboardLayout>
