@@ -30,8 +30,10 @@ export default function Orders() {
   const { data: orders, isLoading, refetch } = useQuery({
     queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
-      const fromISO = startOfDay(dateRange.from).toISOString();
-      const toISO = endOfDay(dateRange.to).toISOString();
+      const fromStart = startOfDay(dateRange.from);
+      const toEnd = endOfDay(dateRange.to);
+      const fromISO = new Date(fromStart.getTime() - fromStart.getTimezoneOffset() * 60000).toISOString();
+      const toISO = new Date(toEnd.getTime() - toEnd.getTimezoneOffset() * 60000).toISOString();
 
       const { data, error } = await supabase
         .from("orders")

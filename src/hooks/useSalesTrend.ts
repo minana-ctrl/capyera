@@ -12,10 +12,12 @@ export const useSalesTrend = (from: Date, to: Date) => {
   return useQuery({
     queryKey: ["sales-trend", from.toISOString(), to.toISOString()],
     queryFn: async (): Promise<SalesTrendData[]> => {
-      const fromISO = startOfDay(from).toISOString();
-      const toISO = endOfDay(to).toISOString();
+      const fromStart = startOfDay(from);
+      const toEnd = endOfDay(to);
+      const fromISO = new Date(fromStart.getTime() - fromStart.getTimezoneOffset() * 60000).toISOString();
+      const toISO = new Date(toEnd.getTime() - toEnd.getTimezoneOffset() * 60000).toISOString();
 
-      // Fetch all orders in date range
+      // Fetch all orders in date range (UTC-safe bounds)
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
         .select("id, placed_at, total_amount")
@@ -24,17 +26,8 @@ export const useSalesTrend = (from: Date, to: Date) => {
         .order("placed_at");
 
       if (ordersError) throw ordersError;
-      if (!orders || orders.length === 0) {
-        // Return empty data for each day in range
-        const days = eachDayOfInterval({ start: from, end: to });
-        return days.map(day => ({
-          date: format(day, 'MMM dd'),
-          revenue: 0,
-          units: 0,
-        }));
-      }
 
-      const orderIds = orders.map(o => o.id);
+      const orderIds = orders?.map(o => o.id) || [];
 
       // Fetch line items in chunks to avoid URL length issues
       let lineItems: any[] = [];
@@ -50,13 +43,13 @@ export const useSalesTrend = (from: Date, to: Date) => {
         if (data) lineItems.push(...data);
       }
 
-      // Group by day
-      const days = eachDayOfInterval({ start: from, end: to });
+      // Group by local day
+      const days = eachDayOfInterval({ start: fromStart, end: toEnd });
       const dailyData = days.map(day => {
         const dayStart = startOfDay(day);
         const dayEnd = endOfDay(day);
 
-        const dayOrders = orders.filter(o => {
+        const dayOrders = (orders || []).filter(o => {
           const orderDate = new Date(o.placed_at);
           return orderDate >= dayStart && orderDate <= dayEnd;
         });
