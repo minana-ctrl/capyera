@@ -190,12 +190,21 @@ export default function Orders() {
       if (error) throw error;
 
       const successCount = data.results?.filter((r: any) => r.success).length || 0;
+      const alreadyExistCount = data.results?.filter((r: any) => 
+        !r.success && r.errors?.[0]?.message?.includes("already been taken")
+      ).length || 0;
       const totalCount = data.results?.length || 0;
 
       if (successCount === totalCount) {
         toast.success(`All ${successCount} webhooks configured successfully!`);
+      } else if (successCount + alreadyExistCount === totalCount) {
+        toast.success(
+          `Webhooks ready! ${successCount} newly created, ${alreadyExistCount} already configured.`
+        );
       } else if (successCount > 0) {
-        toast.warning(`${successCount}/${totalCount} webhooks configured. Check logs for details.`);
+        toast.warning(`${successCount}/${totalCount} webhooks configured. Check console for details.`);
+      } else if (alreadyExistCount === totalCount) {
+        toast.success("All webhooks are already configured and active!");
       } else {
         toast.error("Failed to configure webhooks. Check your Shopify credentials.");
       }
