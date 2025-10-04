@@ -8,12 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Loader2, Webhook } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
   const [isNormalImporting, setIsNormalImporting] = useState(false);
   const [isSettingUpWebhooks, setIsSettingUpWebhooks] = useState(false);
+  const [dateRange, setDateRange] = useState({
+    from: subDays(new Date(), 30),
+    to: new Date(),
+  });
   const [importStatus, setImportStatus] = useState<{
     step: 'idle' | 'starting' | 'polling' | 'processing' | 'complete';
     message: string;
@@ -23,13 +28,17 @@ export default function Orders() {
   }>({ step: 'idle', message: '' });
 
   const { data: orders, isLoading, refetch } = useQuery({
-    queryKey: ["orders"],
+    queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
+      const fromISO = startOfDay(dateRange.from).toISOString();
+      const toISO = endOfDay(dateRange.to).toISOString();
+
       const { data, error } = await supabase
         .from("orders")
         .select("*")
-        .order("placed_at", { ascending: false })
-        .limit(100);
+        .gte("placed_at", fromISO)
+        .lte("placed_at", toISO)
+        .order("placed_at", { ascending: false });
 
       if (error) throw error;
       return data;
@@ -358,10 +367,15 @@ export default function Orders() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Orders</CardTitle>
-            <CardDescription>
-              {orders?.length || 0} orders total
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Orders</CardTitle>
+                <CardDescription>
+                  {orders?.length || 0} orders in selected period
+                </CardDescription>
+              </div>
+              <DateRangeFilter onDateChange={(from, to) => setDateRange({ from, to })} />
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
