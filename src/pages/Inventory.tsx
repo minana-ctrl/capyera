@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, Upload, AlertTriangle, TrendingUp, Search, FileDown, History, Package2, TrendingDown, Minus } from "lucide-react";
+import { Package, Upload, AlertTriangle, TrendingUp, Search, FileDown, History, Package2, TrendingDown, Minus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -33,6 +33,8 @@ const Inventory = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [inboundLogOpen, setInboundLogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const categoryFilter = searchParams.get("category") || null;
   const healthFilter = searchParams.get("health") || null;
@@ -115,11 +117,25 @@ const Inventory = () => {
     });
   }, [inventory, categories]);
 
-  // Filter inventory
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-4 w-4 ml-1" />;
+    return sortDirection === "asc" ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
+  };
+
+  // Filter and sort inventory
   const filteredInventory = useMemo(() => {
     if (!inventory) return [];
 
-    return inventory.filter(item => {
+    let filtered = inventory.filter(item => {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -150,7 +166,36 @@ const Inventory = () => {
 
       return true;
     });
-  }, [inventory, searchQuery, categoryFilter, healthFilter]);
+
+    // Apply sorting
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        let aVal: any = a[sortField as keyof typeof a];
+        let bVal: any = b[sortField as keyof typeof b];
+
+        // Handle velocity fields
+        if (sortField === 'velocity') {
+          aVal = a[`velocity_${velocityPeriod}` as keyof typeof a];
+          bVal = b[`velocity_${velocityPeriod}` as keyof typeof b];
+        }
+
+        // Handle numeric values
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
+        }
+
+        // Handle string values
+        const aStr = String(aVal || '').toLowerCase();
+        const bStr = String(bVal || '').toLowerCase();
+        if (sortDirection === "asc") {
+          return aStr.localeCompare(bStr);
+        }
+        return bStr.localeCompare(aStr);
+      });
+    }
+
+    return filtered;
+  }, [inventory, searchQuery, categoryFilter, healthFilter, sortField, sortDirection, velocityPeriod]);
 
   const clearFilters = () => {
     setSearchParams({});
@@ -375,15 +420,55 @@ const Inventory = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[40px]"></TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Category</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('sku')} className="h-8 px-2">
+                          SKU
+                          <SortIcon field="sku" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('name')} className="h-8 px-2">
+                          Product
+                          <SortIcon field="name" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('category_name')} className="h-8 px-2">
+                          Category
+                          <SortIcon field="category_name" />
+                        </Button>
+                      </TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Par Level</TableHead>
-                      <TableHead className="text-right">Current</TableHead>
-                      <TableHead className="text-right">Reserved</TableHead>
-                      <TableHead className="text-right">Available</TableHead>
-                      <TableHead className="text-right">Velocity</TableHead>
+                      <TableHead className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('par_level')} className="h-8 px-2">
+                          Par Level
+                          <SortIcon field="par_level" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('current_level')} className="h-8 px-2">
+                          Current
+                          <SortIcon field="current_level" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('reserved_stock')} className="h-8 px-2">
+                          Reserved
+                          <SortIcon field="reserved_stock" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('available_stock')} className="h-8 px-2">
+                          Available
+                          <SortIcon field="available_stock" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleSort('velocity')} className="h-8 px-2">
+                          Velocity
+                          <SortIcon field="velocity" />
+                        </Button>
+                      </TableHead>
                       <TableHead>Health</TableHead>
                     </TableRow>
                   </TableHeader>

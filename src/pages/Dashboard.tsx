@@ -2,14 +2,14 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Package2, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Package, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { useState } from "react";
 import { subDays, format, eachDayOfInterval } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const Dashboard = () => {
   const [dateRange, setDateRange] = useState({
@@ -204,65 +204,6 @@ const Dashboard = () => {
     },
   });
 
-  const { data: categories } = useQuery({
-    queryKey: ["category-stats", dateRange.from.toISOString(), dateRange.to.toISOString()],
-    queryFn: async () => {
-      const { data: categories } = await supabase
-        .from("categories")
-        .select("id, name");
-
-      if (!categories) return [];
-
-      // Adjust date range to local timezone
-      const fromDate = new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate());
-      const toDate = new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate() + 1);
-      const fromISO = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString();
-      const toISO = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000).toISOString();
-
-      // First get order IDs in the date range
-      const { data: ordersInRange } = await supabase
-        .from("orders")
-        .select("id")
-        .gte("placed_at", fromISO)
-        .lt("placed_at", toISO);
-
-      const orderIds = ordersInRange?.map(o => o.id) || [];
-
-      if (orderIds.length === 0) {
-        return categories.map(cat => ({ ...cat, revenue: 0, units: 0 }));
-      }
-
-      // Get sales per category in date range using SKU matching
-      const categoryStats = await Promise.all(
-        categories.map(async (cat) => {
-          const { data: products } = await supabase
-            .from("products")
-            .select("sku")
-            .eq("category_id", cat.id);
-
-          const productSkus = products?.map(p => p.sku) || [];
-
-          if (productSkus.length === 0) {
-            return { ...cat, revenue: 0, units: 0 };
-          }
-
-          const { data: lineItems } = await supabase
-            .from("order_line_items")
-            .select("quantity, total_price, order_id")
-            .in("sku", productSkus)
-            .in("order_id", orderIds);
-
-          const revenue = lineItems?.reduce((sum, i) => sum + Number(i.total_price), 0) || 0;
-          const units = lineItems?.reduce((sum, i) => sum + i.quantity, 0) || 0;
-
-          return { ...cat, revenue, units };
-        })
-      );
-
-      return categoryStats.filter(c => c.revenue > 0 || c.units > 0)
-        .sort((a, b) => b.revenue - a.revenue);
-    },
-  });
 
   const getChangeIcon = (change: number) => {
     if (change > 0) return <TrendingUp className="h-4 w-4 text-green-500" />;
@@ -288,7 +229,7 @@ const Dashboard = () => {
       title: "Product Bundles",
       value: stats?.bundles || 0,
       subtitle: "Bundle configurations",
-      icon: Package2,
+      icon: Package,
       color: "text-purple-500",
     },
     {
@@ -553,57 +494,6 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package2 className="h-5 w-5" />
-              Category Performance (Selected Period)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[300px] w-full" />
-            ) : categories && categories.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={categories.slice(0, 8)}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="name" 
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={80}
-                  />
-                  <YAxis 
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    tickFormatter={(value) => `$${value.toFixed(0)}`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '6px'
-                    }}
-                    formatter={(value: number) => `$${value.toFixed(2)}`}
-                  />
-                  <Legend />
-                  <Bar 
-                    dataKey="revenue" 
-                    name="Revenue"
-                    fill="hsl(var(--primary))" 
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                No category data available for selected period
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   );
