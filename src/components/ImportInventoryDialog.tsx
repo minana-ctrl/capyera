@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Upload, FileSpreadsheet, AlertCircle } from "lucide-react";
@@ -17,6 +18,7 @@ interface ImportInventoryDialogProps {
 export const ImportInventoryDialog = ({ open, onOpenChange, onSuccess }: ImportInventoryDialogProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [overrideMode, setOverrideMode] = useState(false);
   const { toast } = useToast();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,12 +137,12 @@ export const ImportInventoryDialog = ({ open, onOpenChange, onSuccess }: ImportI
           const newQuantity = parseInt(quantity);
 
           if (existingStock) {
-            // Update existing stock (add to current quantity)
+            // Update existing stock (override or add based on mode)
+            const finalQuantity = overrideMode ? newQuantity : existingStock.quantity + newQuantity;
             await supabase
               .from("warehouse_stock")
               .update({
-                quantity: existingStock.quantity + newQuantity,
-                available_stock: existingStock.quantity + newQuantity,
+                quantity: finalQuantity,
                 par_level: par_level ? parseInt(par_level) : existingStock.quantity,
                 reorder_point: reorder_point ? parseInt(reorder_point) : undefined,
                 updated_at: new Date().toISOString(),
@@ -154,7 +156,6 @@ export const ImportInventoryDialog = ({ open, onOpenChange, onSuccess }: ImportI
                 product_id: product.id,
                 warehouse_id: warehouse.id,
                 quantity: newQuantity,
-                available_stock: newQuantity,
                 par_level: par_level ? parseInt(par_level) : 0,
                 reorder_point: reorder_point ? parseInt(reorder_point) : 0,
               });
@@ -167,11 +168,13 @@ export const ImportInventoryDialog = ({ open, onOpenChange, onSuccess }: ImportI
               product_id: product.id,
               warehouse_id: warehouse.id,
               quantity: newQuantity,
-              movement_type: "inbound",
+              movement_type: overrideMode ? "adjustment" : "inbound",
               reference_type: "import",
               reference_id: importLog.id,
               created_by: user?.id,
-              notes: `Imported from ${file.name}`,
+              notes: overrideMode 
+                ? `Override import from ${file.name}`
+                : `Imported from ${file.name}`,
             });
 
           imported++;
@@ -200,6 +203,7 @@ export const ImportInventoryDialog = ({ open, onOpenChange, onSuccess }: ImportI
       onSuccess();
       onOpenChange(false);
       setFile(null);
+      setOverrideMode(false);
     } catch (error: any) {
       console.error("Import error:", error);
       toast({
@@ -254,6 +258,21 @@ export const ImportInventoryDialog = ({ open, onOpenChange, onSuccess }: ImportI
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="override-mode"
+              checked={overrideMode}
+              onCheckedChange={(checked) => setOverrideMode(checked === true)}
+              disabled={isLoading}
+            />
+            <Label htmlFor="override-mode" className="cursor-pointer">
+              <div className="font-medium">Override Mode</div>
+              <div className="text-xs text-muted-foreground">
+                Replace existing quantities instead of adding to them
+              </div>
+            </Label>
           </div>
         </div>
 
