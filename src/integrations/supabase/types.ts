@@ -132,6 +132,42 @@ export type Database = {
           },
         ]
       }
+      daily_sales_summary: {
+        Row: {
+          created_at: string | null
+          id: string
+          order_count: number
+          product_revenue: number
+          shipping_revenue: number
+          summary_date: string
+          total_revenue: number
+          units_sold: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          order_count?: number
+          product_revenue?: number
+          shipping_revenue?: number
+          summary_date: string
+          total_revenue?: number
+          units_sold?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          order_count?: number
+          product_revenue?: number
+          shipping_revenue?: number
+          summary_date?: string
+          total_revenue?: number
+          units_sold?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       import_logs: {
         Row: {
           created_at: string | null
@@ -851,6 +887,10 @@ export type Database = {
       }
       deduct_inventory: {
         Args: { p_product_id: string; p_quantity: number }
+        Returns: undefined
+      }
+      recalculate_daily_summary: {
+        Args: { target_date: string }
         Returns: undefined
       }
       release_inventory: {

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { startOfDay, endOfDay, eachDayOfInterval, format } from "date-fns";
+import { eachDayOfInterval, format } from "date-fns";
 
 interface SalesTrendData {
   date: string;
@@ -12,58 +12,31 @@ export const useSalesTrend = (from: Date, to: Date) => {
   return useQuery({
     queryKey: ["sales-trend", from.toISOString(), to.toISOString()],
     queryFn: async (): Promise<SalesTrendData[]> => {
-      const fromStart = startOfDay(from);
-      const toEnd = endOfDay(to);
-      const fromISO = new Date(fromStart.getTime() - fromStart.getTimezoneOffset() * 60000).toISOString();
-      const toISO = new Date(toEnd.getTime() - toEnd.getTimezoneOffset() * 60000).toISOString();
+      // Query the pre-aggregated daily_sales_summary table
+      const { data: summaries, error } = await supabase
+        .from("daily_sales_summary")
+        .select("summary_date, total_revenue, units_sold")
+        .gte("summary_date", format(from, 'yyyy-MM-dd'))
+        .lte("summary_date", format(to, 'yyyy-MM-dd'))
+        .order("summary_date");
 
-      // Fetch all orders in date range (UTC-safe bounds)
-      const { data: orders, error: ordersError } = await supabase
-        .from("orders")
-        .select("id, placed_at, total_amount")
-        .gte("placed_at", fromISO)
-        .lte("placed_at", toISO)
-        .order("placed_at");
+      if (error) throw error;
 
-      if (ordersError) throw ordersError;
+      // Create a map of existing summaries
+      const summaryMap = new Map(
+        summaries?.map(s => [s.summary_date, s]) || []
+      );
 
-      const orderIds = orders?.map(o => o.id) || [];
-
-      // Fetch line items in chunks to avoid URL length issues
-      let lineItems: any[] = [];
-      const chunkSize = 100;
-      for (let i = 0; i < orderIds.length; i += chunkSize) {
-        const chunk = orderIds.slice(i, i + chunkSize);
-        const { data, error } = await supabase
-          .from("order_line_items")
-          .select("order_id, quantity")
-          .in("order_id", chunk);
-
-        if (error) throw error;
-        if (data) lineItems.push(...data);
-      }
-
-      // Group by local day
-      const days = eachDayOfInterval({ start: fromStart, end: toEnd });
+      // Generate all days in range and fill with data or zeros
+      const days = eachDayOfInterval({ start: from, end: to });
       const dailyData = days.map(day => {
-        const dayStart = startOfDay(day);
-        const dayEnd = endOfDay(day);
-
-        const dayOrders = (orders || []).filter(o => {
-          const orderDate = new Date(o.placed_at);
-          return orderDate >= dayStart && orderDate <= dayEnd;
-        });
-
-        const dayOrderIds = new Set(dayOrders.map(o => o.id));
-        const dayLineItems = lineItems.filter(item => dayOrderIds.has(item.order_id));
-
-        const revenue = dayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
-        const units = dayLineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+        const dateKey = format(day, 'yyyy-MM-dd');
+        const summary = summaryMap.get(dateKey);
 
         return {
           date: format(day, 'MMM dd'),
-          revenue,
-          units,
+          revenue: summary ? Number(summary.total_revenue) : 0,
+          units: summary ? summary.units_sold : 0,
         };
       });
 
