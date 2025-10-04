@@ -2,12 +2,29 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Mail, Phone, MapPin, User } from "lucide-react";
+import { Users, Mail, Phone, MapPin, User, Plus, Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { SupplierFormDialog } from "@/components/SupplierFormDialog";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const Suppliers = () => {
-  const { data: suppliers, isLoading } = useQuery({
+  const [formOpen, setFormOpen] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
+  const [deleteSupplier, setDeleteSupplier] = useState<any>(null);
+
+  const { data: suppliers, isLoading, refetch } = useQuery({
     queryKey: ["suppliers"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -20,6 +37,37 @@ const Suppliers = () => {
     },
   });
 
+  const handleEdit = (supplier: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSupplier(supplier);
+    setFormOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteSupplier) return;
+    
+    try {
+      const { error } = await supabase
+        .from("suppliers")
+        .delete()
+        .eq("id", deleteSupplier.id);
+
+      if (error) throw error;
+      toast.success("Supplier deleted successfully");
+      refetch();
+    } catch (error: any) {
+      console.error("Error deleting supplier:", error);
+      toast.error(error.message || "Failed to delete supplier");
+    } finally {
+      setDeleteSupplier(null);
+    }
+  };
+
+  const handleFormClose = () => {
+    setFormOpen(false);
+    setSelectedSupplier(null);
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
@@ -28,6 +76,10 @@ const Suppliers = () => {
             <h2 className="text-3xl font-bold">Suppliers</h2>
             <p className="text-muted-foreground">Manage vendor relationships and contacts</p>
           </div>
+          <Button onClick={() => setFormOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Supplier
+          </Button>
         </div>
 
         <Card>
@@ -49,10 +101,31 @@ const Suppliers = () => {
                 {suppliers?.map((supplier) => (
                   <Card key={supplier.id} className="hover:shadow-md transition-shadow">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Users className="h-5 w-5 text-primary" />
-                        {supplier.name}
-                      </CardTitle>
+                      <div className="flex items-start justify-between">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Users className="h-5 w-5 text-primary" />
+                          {supplier.name}
+                        </CardTitle>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => handleEdit(supplier, e)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteSupplier(supplier);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
                       {supplier.contact_person && (
@@ -110,6 +183,30 @@ const Suppliers = () => {
           </CardContent>
         </Card>
       </div>
+
+      <SupplierFormDialog
+        open={formOpen}
+        onOpenChange={handleFormClose}
+        supplier={selectedSupplier}
+        onSuccess={() => refetch()}
+      />
+
+      <AlertDialog open={!!deleteSupplier} onOpenChange={() => setDeleteSupplier(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Supplier</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteSupplier?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };

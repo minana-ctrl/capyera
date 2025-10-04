@@ -4,10 +4,28 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Warehouse, MapPin, User } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Warehouse, MapPin, Plus, Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { WarehouseFormDialog } from "@/components/WarehouseFormDialog";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const Warehouses = () => {
-  const { data: warehouses, isLoading } = useQuery({
+  const [formOpen, setFormOpen] = useState(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<any>(null);
+  const [deleteWarehouse, setDeleteWarehouse] = useState<any>(null);
+
+  const { data: warehouses, isLoading, refetch } = useQuery({
     queryKey: ["warehouses"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -20,6 +38,37 @@ const Warehouses = () => {
     },
   });
 
+  const handleEdit = (warehouse: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedWarehouse(warehouse);
+    setFormOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteWarehouse) return;
+    
+    try {
+      const { error } = await supabase
+        .from("warehouses")
+        .delete()
+        .eq("id", deleteWarehouse.id);
+
+      if (error) throw error;
+      toast.success("Warehouse deleted successfully");
+      refetch();
+    } catch (error: any) {
+      console.error("Error deleting warehouse:", error);
+      toast.error(error.message || "Failed to delete warehouse");
+    } finally {
+      setDeleteWarehouse(null);
+    }
+  };
+
+  const handleFormClose = () => {
+    setFormOpen(false);
+    setSelectedWarehouse(null);
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
@@ -28,6 +77,10 @@ const Warehouses = () => {
             <h2 className="text-3xl font-bold">Warehouses</h2>
             <p className="text-muted-foreground">Manage storage locations and facilities</p>
           </div>
+          <Button onClick={() => setFormOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Warehouse
+          </Button>
         </div>
 
         {isLoading ? (
@@ -46,7 +99,25 @@ const Warehouses = () => {
                       <Warehouse className="h-5 w-5 text-primary" />
                       <CardTitle className="text-lg">{warehouse.name}</CardTitle>
                     </div>
-                    <Badge variant="outline" className="bg-green-50">Active</Badge>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => handleEdit(warehouse, e)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteWarehouse(warehouse);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -85,6 +156,30 @@ const Warehouses = () => {
           </Card>
         )}
       </div>
+
+      <WarehouseFormDialog
+        open={formOpen}
+        onOpenChange={handleFormClose}
+        warehouse={selectedWarehouse}
+        onSuccess={() => refetch()}
+      />
+
+      <AlertDialog open={!!deleteWarehouse} onOpenChange={() => setDeleteWarehouse(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Warehouse</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteWarehouse?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };
