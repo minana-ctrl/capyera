@@ -57,7 +57,18 @@ export default function Orders() {
 
       const { data, error } = await supabase
         .from("orders")
-        .select("*")
+        .select(`
+          *,
+          order_line_items (
+            id,
+            product_id,
+            product_name,
+            sku,
+            quantity,
+            unit_price,
+            total_price
+          )
+        `)
         .gte("placed_at", fromISO)
         .lte("placed_at", toISO)
         .order("placed_at", { ascending: false });
@@ -387,6 +398,7 @@ export default function Orders() {
                   <TableHead>Order #</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Items</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Fulfillment</TableHead>
@@ -401,7 +413,7 @@ export default function Orders() {
                     </TableCell>
                   </TableRow>
                 ) : orders && orders.length > 0 ? (
-                  orders.map((order) => (
+                  orders.map((order: any) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-medium">{order.order_number}</TableCell>
                       <TableCell>
@@ -412,6 +424,25 @@ export default function Orders() {
                       </TableCell>
                       <TableCell>
                         {formatInTimeZone(new Date(order.placed_at), "UTC", "MMM d, yyyy")}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          {order.order_line_items?.map((item: any) => (
+                            <div key={item.id} className="text-xs">
+                              <div className="flex items-center gap-1">
+                                <span className="font-medium">{item.product_name}</span>
+                                {item.product_id ? (
+                                  <Badge variant="outline" className="text-[10px] px-1 py-0">✓</Badge>
+                                ) : (
+                                  <Badge variant="destructive" className="text-[10px] px-1 py-0">✗</Badge>
+                                )}
+                              </div>
+                              <div className="text-muted-foreground">
+                                SKU: {item.sku} × {item.quantity}
+                              </div>
+                            </div>
+                          )) || <span className="text-muted-foreground">No items</span>}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {order.currency} {Number(order.total_amount).toFixed(2)}
@@ -429,7 +460,7 @@ export default function Orders() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No orders found. Click "Import from Shopify" to import orders.
                     </TableCell>
                   </TableRow>
