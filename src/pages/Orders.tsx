@@ -31,14 +31,21 @@ export default function Orders() {
   const { data: orders, isLoading, refetch } = useQuery({
     queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
+      const getUTCStartOfDay = (date: Date) => {
+        const d = new Date(date);
+        d.setUTCHours(0, 0, 0, 0);
+        return d;
+      };
+
+      const getUTCEndOfDay = (date: Date) => {
+        const d = new Date(date);
+        d.setUTCHours(23, 59, 59, 999);
+        return d;
+      };
+
       // Use UTC for date range filtering
-      const utcFrom = toZonedTime(dateRange.from, 'UTC');
-      utcFrom.setUTCHours(0, 0, 0, 0);
-      const fromISO = fromZonedTime(utcFrom, 'UTC').toISOString();
-      
-      const utcTo = toZonedTime(dateRange.to, 'UTC');
-      utcTo.setUTCHours(23, 59, 59, 999);
-      const toISO = fromZonedTime(utcTo, 'UTC').toISOString();
+      const fromISO = getUTCStartOfDay(dateRange.from).toISOString();
+      const toISO = getUTCEndOfDay(dateRange.to).toISOString();
 
       const { data, error } = await supabase
         .from("orders")

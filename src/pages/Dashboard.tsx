@@ -12,15 +12,15 @@ import { DateRangeFilter } from "@/components/DateRangeFilter";
 const Dashboard = () => {
 
   const getUTCStartOfDay = (date: Date) => {
-    const zonedDate = toZonedTime(date, 'UTC');
-    zonedDate.setUTCHours(0, 0, 0, 0);
-    return fromZonedTime(zonedDate, 'UTC');
+    const d = new Date(date);
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
   };
 
   const getUTCEndOfDay = (date: Date) => {
-    const zonedDate = toZonedTime(date, 'UTC');
-    zonedDate.setUTCHours(23, 59, 59, 999);
-    return fromZonedTime(zonedDate, 'UTC');
+    const d = new Date(date);
+    d.setUTCHours(23, 59, 59, 999);
+    return d;
   };
 
   const [metricsDateRange, setMetricsDateRange] = useState({
