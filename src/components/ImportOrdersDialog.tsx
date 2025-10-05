@@ -13,6 +13,55 @@ interface ImportOrdersDialogProps {
   onSuccess: () => void;
 }
 
+// Helper: split CSV into safe chunks with header replicated
+function splitCsvIntoChunksWithHeader(csv: string, maxChunkSize = 750000): string[] {
+  // Find header row end respecting quotes
+  let inQuotes = false;
+  let headerEnd = -1;
+  for (let i = 0; i < csv.length; i++) {
+    const c = csv[i];
+    const next = csv[i + 1];
+    if (c === '"') {
+      if (inQuotes && next === '"') { i++; continue; }
+      inQuotes = !inQuotes;
+    } else if ((c === '\n' || c === '\r') && !inQuotes) {
+      // handle \r\n
+      headerEnd = c === '\r' && next === '\n' ? i + 2 : i + 1;
+      break;
+    }
+  }
+  if (headerEnd === -1) return [csv];
+  const header = csv.slice(0, headerEnd);
+  const body = csv.slice(headerEnd);
+
+  const chunks: string[] = [];
+  let chunkBody = '';
+  inQuotes = false;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    const next = body[i + 1];
+    if (c === '"') {
+      if (inQuotes && next === '"') { chunkBody += '"'; i++; continue; }
+      inQuotes = !inQuotes;
+      chunkBody += c;
+    } else if ((c === '\n' || c === '\r') && !inQuotes) {
+      // row boundary
+      // include CRLF fully
+      if (c === '\r' && next === '\n') { chunkBody += '\r\n'; i++; } else { chunkBody += c; }
+      if (chunkBody.length >= maxChunkSize) {
+        chunks.push(header + chunkBody);
+        chunkBody = '';
+      }
+    } else {
+      chunkBody += c;
+    }
+  }
+  if (chunkBody.trim().length > 0) {
+    chunks.push(header + chunkBody);
+  }
+  return chunks.length ? chunks : [csv];
+}
+
 export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrdersDialogProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -80,15 +129,24 @@ export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrde
         });
 
         const csvText = await file.text();
+        const parts = splitCsvIntoChunksWithHeader(csvText, 700_000);
 
-        const { data, error } = await supabase.functions.invoke('import-orders-csv', {
-          body: { csvData: [csvText], clearData: false }
-        });
+        for (let p = 0; p < parts.length; p++) {
+          // Early cancellation check between chunks
+          if (isCancelled) break;
 
-        if (error) throw error;
+          const { data, error } = await supabase.functions.invoke('import-orders-csv', {
+            body: { csvData: [parts[p]], clearData: false }
+          });
+          if (error) throw error;
+          totalOrdersImported += data.ordersImported || 0;
+          totalLineItemsImported += data.lineItemsImported || 0;
 
-        totalOrdersImported += data.ordersImported || 0;
-        totalLineItemsImported += data.lineItemsImported || 0;
+          toast({
+            title: `Imported chunk ${p + 1}/${parts.length} from ${file.name}`,
+            description: `${totalOrdersImported} orders / ${totalLineItemsImported} items so far`,
+          });
+        }
       }
 
       toast({
