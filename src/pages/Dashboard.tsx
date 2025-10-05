@@ -6,27 +6,41 @@ import { Package, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Minus } fr
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalesTrendCard } from "@/components/dashboard/SalesTrendCard";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { useState } from "react";
+import { DateRangePresets } from "@/components/dashboard/DateRangePresets";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 
 const Dashboard = () => {
 
-  // Today's sales metrics - using UTC date boundaries
+  const getUTCStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, 'UTC');
+    zonedDate.setUTCHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, 'UTC');
+  };
+
+  const getUTCEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, 'UTC');
+    zonedDate.setUTCHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, 'UTC');
+  };
+
+  const [metricsDateRange, setMetricsDateRange] = useState({
+    from: getUTCStartOfDay(new Date()),
+    to: getUTCEndOfDay(new Date()),
+  });
+
+  // Sales metrics with date range filtering
   const { data: todayStats, isLoading: salesLoading } = useQuery({
-    queryKey: ["sales-today"],
+    queryKey: ["sales-metrics", metricsDateRange.from.toISOString(), metricsDateRange.to.toISOString()],
     queryFn: async () => {
-      // Get UTC start and end of today
-      const now = new Date();
-      const utcToday = toZonedTime(now, 'UTC');
-      utcToday.setUTCHours(0, 0, 0, 0);
-      const todayStart = fromZonedTime(utcToday, 'UTC');
-      
-      const todayEnd = new Date(todayStart);
-      todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+      const periodStart = metricsDateRange.from;
+      const periodEnd = metricsDateRange.to;
       
       const { data: orders } = await supabase
         .from("orders")
         .select("*")
-        .gte("placed_at", todayStart.toISOString())
-        .lt("placed_at", todayEnd.toISOString());
+        .gte("placed_at", periodStart.toISOString())
+        .lte("placed_at", periodEnd.toISOString());
 
       const totalRevenue = orders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const productRevenue = orders?.reduce((sum, o) => sum + Number(o.product_revenue), 0) || 0;
@@ -34,19 +48,20 @@ const Dashboard = () => {
       const orderCount = orders?.length || 0;
       const avgOrderValue = orderCount > 0 ? totalRevenue / orderCount : 0;
 
-      // Get UTC yesterday
-      const yesterdayStart = new Date(todayStart);
-      yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+      // Calculate comparison period (same duration, ending before current period starts)
+      const periodDuration = periodEnd.getTime() - periodStart.getTime();
+      const comparisonEnd = new Date(periodStart);
+      const comparisonStart = new Date(periodStart.getTime() - periodDuration);
       
-      const { data: yesterdayOrders } = await supabase
+      const { data: comparisonOrders } = await supabase
         .from("orders")
         .select("total_amount")
-        .gte("placed_at", yesterdayStart.toISOString())
-        .lt("placed_at", todayStart.toISOString());
+        .gte("placed_at", comparisonStart.toISOString())
+        .lt("placed_at", comparisonEnd.toISOString());
 
-      const yesterdayRevenue = yesterdayOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
-      const revenueChange = yesterdayRevenue > 0 
-        ? ((totalRevenue - yesterdayRevenue) / yesterdayRevenue) * 100 
+      const comparisonRevenue = comparisonOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
+      const revenueChange = comparisonRevenue > 0 
+        ? ((totalRevenue - comparisonRevenue) / comparisonRevenue) * 100 
         : totalRevenue > 0 ? 100 : 0;
 
       return {
@@ -56,32 +71,25 @@ const Dashboard = () => {
         orderCount,
         avgOrderValue,
         revenueChange,
-        yesterdayRevenue, // Include for debugging
+        comparisonRevenue,
       };
     },
-    refetchInterval: 300000, // Auto-refresh every 5 minutes
   });
 
   const { data: topProducts } = useQuery({
-    queryKey: ["top-products-today"],
+    queryKey: ["top-products", metricsDateRange.from.toISOString(), metricsDateRange.to.toISOString()],
     queryFn: async () => {
-      // Get UTC start and end of today
-      const now = new Date();
-      const utcToday = toZonedTime(now, 'UTC');
-      utcToday.setUTCHours(0, 0, 0, 0);
-      const todayStart = fromZonedTime(utcToday, 'UTC');
+      const periodStart = metricsDateRange.from;
+      const periodEnd = metricsDateRange.to;
       
-      const todayEnd = new Date(todayStart);
-      todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-      
-      // First get order IDs from today based on placed_at
-      const { data: todayOrders } = await supabase
+      // First get order IDs from selected period based on placed_at
+      const { data: periodOrders } = await supabase
         .from("orders")
         .select("id")
-        .gte("placed_at", todayStart.toISOString())
-        .lt("placed_at", todayEnd.toISOString());
+        .gte("placed_at", periodStart.toISOString())
+        .lte("placed_at", periodEnd.toISOString());
 
-      const orderIds = todayOrders?.map(o => o.id) || [];
+      const orderIds = periodOrders?.map(o => o.id) || [];
 
       if (orderIds.length === 0) {
         return { byUnits: [], byRevenue: [] };
@@ -195,18 +203,28 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-3xl font-bold">Dashboard</h2>
             <p className="text-muted-foreground">
               Real-time overview • Last updated: {new Date().toLocaleTimeString()}
             </p>
           </div>
+          <div className="flex items-center gap-3">
+            <DateRangePresets
+              onRangeSelect={(from, to) => setMetricsDateRange({ from, to })}
+              currentFrom={metricsDateRange.from}
+              currentTo={metricsDateRange.to}
+            />
+            <DateRangeFilter
+              onDateChange={(from, to) => setMetricsDateRange({ from, to })}
+            />
+          </div>
         </div>
 
-        {/* Today's Sales Metrics */}
+        {/* Sales Performance Metrics */}
         <div>
-          <h3 className="text-lg font-semibold mb-3">Today's Sales Performance</h3>
+          <h3 className="text-lg font-semibold mb-3">Sales Performance</h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -221,7 +239,7 @@ const Dashboard = () => {
                     <div className="text-3xl font-bold">${todayStats?.totalRevenue.toFixed(2)}</div>
                     <div className={`flex items-center gap-1 text-xs ${getChangeColor(todayStats?.revenueChange || 0)}`}>
                       {getChangeIcon(todayStats?.revenueChange || 0)}
-                      {Math.abs(todayStats?.revenueChange || 0).toFixed(1)}% vs yesterday
+                      {Math.abs(todayStats?.revenueChange || 0).toFixed(1)}% vs previous period
                     </div>
                   </>
                 )}
@@ -299,11 +317,11 @@ const Dashboard = () => {
         </div>
 
 
-        {/* Top Products Today */}
+        {/* Top Products for Selected Period */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Top Products by Units Sold (Today)</CardTitle>
+              <CardTitle>Top Products by Units Sold</CardTitle>
             </CardHeader>
             <CardContent>
               {salesLoading ? (
@@ -331,14 +349,14 @@ const Dashboard = () => {
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8">No sales data yet today</p>
+                <p className="text-center text-muted-foreground py-8">No sales data for selected period</p>
               )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Top Products by Revenue (Today)</CardTitle>
+              <CardTitle>Top Products by Revenue</CardTitle>
             </CardHeader>
             <CardContent>
               {salesLoading ? (
@@ -366,7 +384,7 @@ const Dashboard = () => {
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-muted-foreground py-8">No sales data yet today</p>
+                <p className="text-center text-muted-foreground py-8">No sales data for selected period</p>
               )}
             </CardContent>
           </Card>
