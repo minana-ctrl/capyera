@@ -885,6 +885,10 @@ export type Database = {
         Args: { bundle_uuid: string }
         Returns: number
       }
+      clear_orders_all: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       deduct_inventory: {
         Args: { p_product_id: string; p_quantity: number }
         Returns: undefined
