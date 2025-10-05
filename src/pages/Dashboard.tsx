@@ -7,7 +7,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SalesTrendCard } from "@/components/dashboard/SalesTrendCard";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
-import { DateRangePresets } from "@/components/dashboard/DateRangePresets";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 
 const Dashboard = () => {
@@ -211,11 +210,6 @@ const Dashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <DateRangePresets
-              onRangeSelect={(from, to) => setMetricsDateRange({ from, to })}
-              currentFrom={metricsDateRange.from}
-              currentTo={metricsDateRange.to}
-            />
             <DateRangeFilter
               onDateChange={(from, to) => setMetricsDateRange({ from, to })}
             />
