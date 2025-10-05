@@ -73,14 +73,28 @@ Deno.serve(async (req) => {
       
       for (let i = 1; i < rows.length; i++) {
         const values = rows[i];
+        
+        // Try to salvage data even if column count doesn't match exactly
         if (values.length !== headers.length) {
           console.warn(`Row ${i} has ${values.length} columns, expected ${headers.length}`);
-          continue;
+          
+          // Skip only if the row is clearly invalid (too few critical columns)
+          if (values.length < 10) {
+            continue;
+          }
+          
+          // Pad or truncate to match header length
+          while (values.length < headers.length) {
+            values.push('');
+          }
+          if (values.length > headers.length) {
+            values.length = headers.length;
+          }
         }
         
         const row: any = {};
         headers.forEach((header: string, idx: number) => {
-          row[header] = values[idx];
+          row[header] = values[idx] || '';
         });
 
         const orderNumber = row['Name'];
@@ -274,7 +288,7 @@ Deno.serve(async (req) => {
 // Parse CSV properly handling quoted fields with newlines
 function parseCSV(csv: string): string[][] {
   const rows: string[][] = [];
-  const row: string[] = [];
+  let row: string[] = [];
   let field = '';
   let inQuotes = false;
   
@@ -284,27 +298,35 @@ function parseCSV(csv: string): string[][] {
     
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
-        // Escaped quote
+        // Escaped quote inside quoted field
         field += '"';
         i++;
+      } else if (inQuotes && (nextChar === ',' || nextChar === '\n' || nextChar === '\r' || nextChar === undefined)) {
+        // End of quoted field - only toggle off quotes if followed by delimiter or end
+        inQuotes = false;
+      } else if (!inQuotes && field.length === 0) {
+        // Start of quoted field - only toggle on if at field start
+        inQuotes = true;
       } else {
-        // Toggle quote state
-        inQuotes = !inQuotes;
+        // Quote in middle of unquoted field, keep it
+        field += char;
       }
     } else if (char === ',' && !inQuotes) {
       // End of field
-      row.push(field.trim());
+      row.push(field);
       field = '';
     } else if ((char === '\n' || char === '\r') && !inQuotes) {
       // End of row
       if (char === '\r' && nextChar === '\n') {
         i++; // Skip \r\n
       }
-      row.push(field.trim());
+      row.push(field);
+      
+      // Only add row if it has content
       if (row.some(f => f.length > 0)) {
-        rows.push([...row]);
+        rows.push(row);
       }
-      row.length = 0;
+      row = [];
       field = '';
     } else {
       field += char;
@@ -312,8 +334,8 @@ function parseCSV(csv: string): string[][] {
   }
   
   // Handle last field and row
-  if (field || row.length > 0) {
-    row.push(field.trim());
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
     if (row.some(f => f.length > 0)) {
       rows.push(row);
     }
