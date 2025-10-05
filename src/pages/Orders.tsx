@@ -18,6 +18,7 @@ export default function Orders() {
   const [isSettingUpWebhooks, setIsSettingUpWebhooks] = useState(false);
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [page, setPage] = useState(0);
   const [dateRange, setDateRange] = useState({
     from: subDays(new Date(), 30),
     to: new Date(),
@@ -30,23 +31,27 @@ export default function Orders() {
     objectCount?: number;
   }>({ step: 'idle', message: '' });
 
-  const { data: orders, isLoading, refetch } = useQuery({
-    queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString()],
+  const ORDERS_PER_PAGE = 50;
+
+  const { data: ordersData, isLoading, refetch } = useQuery({
+    queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString(), page],
     queryFn: async () => {
       const PACIFIC_TZ = 'America/Los_Angeles';
       
       const getPacificStartOfDay = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
+        const pacificDate = toZonedTime(date, PACIFIC_TZ);
+        const year = pacificDate.getFullYear();
+        const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
+        const day = String(pacificDate.getDate()).padStart(2, '0');
         const dateStr = `${year}-${month}-${day}T00:00:00`;
         return fromZonedTime(dateStr, PACIFIC_TZ);
       };
 
       const getPacificEndOfDay = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
+        const pacificDate = toZonedTime(date, PACIFIC_TZ);
+        const year = pacificDate.getFullYear();
+        const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
+        const day = String(pacificDate.getDate()).padStart(2, '0');
         const dateStr = `${year}-${month}-${day}T23:59:59.999`;
         return fromZonedTime(dateStr, PACIFIC_TZ);
       };
@@ -55,6 +60,14 @@ export default function Orders() {
       const fromISO = getPacificStartOfDay(dateRange.from).toISOString();
       const toISO = getPacificEndOfDay(dateRange.to).toISOString();
 
+      // First get total count for pagination
+      const { count } = await supabase
+        .from("orders")
+        .select("*", { count: 'exact', head: true })
+        .gte("placed_at", fromISO)
+        .lte("placed_at", toISO);
+
+      // Then fetch paginated orders with line items
       const { data, error } = await supabase
         .from("orders")
         .select(`
@@ -71,12 +84,16 @@ export default function Orders() {
         `)
         .gte("placed_at", fromISO)
         .lte("placed_at", toISO)
-        .order("placed_at", { ascending: false });
+        .order("placed_at", { ascending: false })
+        .range(page * ORDERS_PER_PAGE, (page + 1) * ORDERS_PER_PAGE - 1);
 
       if (error) throw error;
-      return data;
+      return { orders: data, totalCount: count || 0 };
     },
   });
+
+  const orders = ordersData?.orders;
+  const totalPages = ordersData ? Math.ceil(ordersData.totalCount / ORDERS_PER_PAGE) : 0;
 
   const { data: importLogs } = useQuery({
     queryKey: ["import-logs"],
@@ -385,10 +402,13 @@ export default function Orders() {
               <div>
                 <CardTitle>Orders</CardTitle>
                 <CardDescription>
-                  {orders?.length || 0} orders in selected period
+                  Showing {orders?.length || 0} of {ordersData?.totalCount || 0} orders
                 </CardDescription>
               </div>
-              <DateRangeFilter onDateChange={(from, to) => setDateRange({ from, to })} />
+              <DateRangeFilter onDateChange={(from, to) => {
+                setDateRange({ from, to });
+                setPage(0); // Reset to first page on date change
+              }} />
             </div>
           </CardHeader>
           <CardContent>
@@ -408,7 +428,7 @@ export default function Orders() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={8} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
@@ -467,6 +487,33 @@ export default function Orders() {
                 )}
               </TableBody>
             </Table>
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Page {page + 1} of {totalPages}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    disabled={page === 0 || isLoading}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={page >= totalPages - 1 || isLoading}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
