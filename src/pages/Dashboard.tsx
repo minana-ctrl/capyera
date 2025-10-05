@@ -19,6 +19,9 @@ const Dashboard = () => {
   // Sales metrics with date range filtering
   const { data: todayStats, isLoading: salesLoading } = useQuery({
     queryKey: ["sales-metrics", metricsDateRange.from.toISOString(), metricsDateRange.to.toISOString()],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 30000, // Consider data stale after 30 seconds
     queryFn: async () => {
       const periodStart = metricsDateRange.from;
       const periodEnd = metricsDateRange.to;
@@ -65,6 +68,9 @@ const Dashboard = () => {
 
   const { data: topProducts } = useQuery({
     queryKey: ["top-products", metricsDateRange.from.toISOString(), metricsDateRange.to.toISOString()],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
     queryFn: async () => {
       const periodStart = metricsDateRange.from;
       const periodEnd = metricsDateRange.to;
@@ -127,6 +133,9 @@ const Dashboard = () => {
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
     queryFn: async () => {
       const [productsRes, bundlesRes, warehousesRes, ordersRes] = await Promise.all([
         supabase.from("products").select("*", { count: "exact", head: true }),

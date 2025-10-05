@@ -13,6 +13,9 @@ interface SalesTrendData {
 export const useSalesTrend = (from: Date, to: Date) => {
   return useQuery({
     queryKey: ["sales-trend", from.toISOString(), to.toISOString()],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
     queryFn: async (): Promise<SalesTrendData[]> => {
       
       // Fetch raw orders within Pacific "from" and "to" boundaries (converted to UTC dates)
