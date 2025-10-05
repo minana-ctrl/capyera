@@ -178,16 +178,44 @@ Deno.serve(async (req) => {
         console.log(`Order ID map size after fetch: ${orderIdMap.size}`);
       }
 
+      // Fetch all products to map SKUs to product IDs
+      console.log('Fetching products for SKU mapping...');
+      const { data: products, error: productsError } = await supabaseClient
+        .from('products')
+        .select('id, sku');
+      
+      const productSkuMap = new Map<string, string>();
+      if (products) {
+        products.forEach((p: any) => {
+          if (p.sku) {
+            productSkuMap.set(p.sku.trim().toLowerCase(), p.id);
+          }
+        });
+        console.log(`Loaded ${productSkuMap.size} products for SKU matching`);
+      } else if (productsError) {
+        console.error('Error fetching products:', productsError);
+      }
+
       // Map and insert line items
       const lineItemsWithIds = lineItems
-        .map(item => ({
-          ...item,
-          order_number: String(item.order_number).trim(),
-          order_id: orderIdMap.get(String(item.order_number).trim()),
-        }))
+        .map(item => {
+          const orderNum = String(item.order_number).trim();
+          const orderId = orderIdMap.get(orderNum);
+          const productId = item.sku ? productSkuMap.get(item.sku.trim().toLowerCase()) : null;
+          
+          return {
+            ...item,
+            order_number: orderNum,
+            order_id: orderId,
+            product_id: productId || null,
+          };
+        })
         .filter(item => item.order_id);
 
       console.log(`Line items built: ${lineItems.length}, linked to orders: ${lineItemsWithIds.length}`);
+      
+      const linkedToProducts = lineItemsWithIds.filter(li => li.product_id).length;
+      console.log(`Line items linked to products: ${linkedToProducts}/${lineItemsWithIds.length}`);
       
       if (lineItemsWithIds.length < lineItems.length) {
         console.warn(`⚠️ ${lineItems.length - lineItemsWithIds.length} line items couldn't be linked to orders`);
