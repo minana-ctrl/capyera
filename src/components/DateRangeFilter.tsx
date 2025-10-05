@@ -14,7 +14,7 @@ interface DateRangeFilterProps {
 export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
 
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
-    from: getPacificStartOfDay(subDays(new Date(), 30)),
+    from: getPacificStartOfDay(new Date()),
     to: getPacificEndOfDay(new Date()),
   });
 
