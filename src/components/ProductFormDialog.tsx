@@ -19,7 +19,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Image as ImageIcon, Upload } from "lucide-react";
+import { Image as ImageIcon, Upload, Plus, Minus, Package } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const productSchema = z.object({
   sku: z.string().min(1, "SKU is required"),
@@ -39,12 +40,16 @@ interface ProductFormDialogProps {
   product?: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onInventoryUpdate?: () => void;
 }
 
-export const ProductFormDialog = ({ product, open, onOpenChange }: ProductFormDialogProps) => {
+export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpdate }: ProductFormDialogProps) => {
   const queryClient = useQueryClient();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(product?.image_url || null);
+  const [adjustmentQuantity, setAdjustmentQuantity] = useState<string>("");
+  const [adjustmentNotes, setAdjustmentNotes] = useState("");
+  const [isAdjusting, setIsAdjusting] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -61,7 +66,7 @@ export const ProductFormDialog = ({ product, open, onOpenChange }: ProductFormDi
     queryFn: async () => {
       const { data, error } = await supabase
         .from("warehouse_stock")
-        .select("quantity, available_stock, reserved_stock")
+        .select("quantity, available_stock, reserved_stock, warehouse_id")
         .eq("product_id", product.id)
         .maybeSingle();
       if (error) throw error;
@@ -204,135 +209,356 @@ export const ProductFormDialog = ({ product, open, onOpenChange }: ProductFormDi
     mutation.mutate(data);
   };
 
+  const handleAdjustment = async (type: 'add' | 'remove' | 'set') => {
+    if (!adjustmentQuantity || isNaN(Number(adjustmentQuantity)) || Number(adjustmentQuantity) < 0) {
+      toast.error("Please enter a valid positive number");
+      return;
+    }
+
+    if (!product?.id || !stockLevel) {
+      toast.error("Cannot adjust inventory: product data not available");
+      return;
+    }
+
+    setIsAdjusting(true);
+    try {
+      const qty = Number(adjustmentQuantity);
+      let newQuantity: number;
+      let movementType: string;
+
+      const currentStock = stockLevel.quantity;
+
+      switch (type) {
+        case 'add':
+          newQuantity = currentStock + qty;
+          movementType = 'inbound';
+          break;
+        case 'remove':
+          newQuantity = Math.max(0, currentStock - qty);
+          movementType = 'adjustment';
+          break;
+        case 'set':
+          newQuantity = qty;
+          movementType = 'adjustment';
+          break;
+      }
+
+      // Update warehouse stock
+      const { error: updateError } = await supabase
+        .from("warehouse_stock")
+        .update({
+          quantity: newQuantity,
+          available_stock: newQuantity - (stockLevel.reserved_stock || 0),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("product_id", product.id);
+
+      if (updateError) throw updateError;
+
+      // Log stock movement
+      const { error: logError } = await supabase
+        .from("stock_movements")
+        .insert({
+          product_id: product.id,
+          warehouse_id: stockLevel.warehouse_id,
+          movement_type: movementType,
+          quantity: type === 'remove' ? -qty : (type === 'add' ? qty : (newQuantity - currentStock)),
+          notes: adjustmentNotes || `Manual ${type} adjustment`,
+        });
+
+      if (logError) throw logError;
+
+      toast.success("Inventory adjusted successfully");
+      
+      setAdjustmentQuantity("");
+      setAdjustmentNotes("");
+      
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ["warehouse_stock"] });
+      onInventoryUpdate?.();
+    } catch (error: any) {
+      console.error("Error adjusting inventory:", error);
+      toast.error(error.message || "Failed to adjust inventory");
+    } finally {
+      setIsAdjusting(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2 flex flex-col items-center gap-4">
-              <Avatar className="h-32 w-32 rounded-md">
-                <AvatarImage src={imagePreview || undefined} alt="Product" />
-                <AvatarFallback className="rounded-md bg-muted">
-                  <ImageIcon className="h-16 w-16 text-muted-foreground" />
-                </AvatarFallback>
-              </Avatar>
-              <Label htmlFor="image" className="cursor-pointer">
-                <div className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-muted">
-                  <Upload className="h-4 w-4" />
-                  <span>Upload Image</span>
-                </div>
-                <Input
-                  id="image"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageChange}
-                />
-              </Label>
-            </div>
+        
+        <Tabs defaultValue="details" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="details">Product Details</TabsTrigger>
+            {product && <TabsTrigger value="inventory">Adjust Inventory</TabsTrigger>}
+          </TabsList>
 
-            {product && stockLevel && (
-              <div className="col-span-2 p-4 bg-muted rounded-lg">
-                <h4 className="font-semibold mb-2">Current Stock Levels</h4>
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Total Quantity</p>
-                    <p className="text-lg font-bold">{stockLevel.quantity}</p>
+          <TabsContent value="details">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 flex flex-col items-center gap-4">
+                  <Avatar className="h-32 w-32 rounded-md">
+                    <AvatarImage src={imagePreview || undefined} alt="Product" />
+                    <AvatarFallback className="rounded-md bg-muted">
+                      <ImageIcon className="h-16 w-16 text-muted-foreground" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <Label htmlFor="image" className="cursor-pointer">
+                    <div className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-muted">
+                      <Upload className="h-4 w-4" />
+                      <span>Upload Image</span>
+                    </div>
+                    <Input
+                      id="image"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageChange}
+                    />
+                  </Label>
+                </div>
+
+                {product && stockLevel && (
+                  <div className="col-span-2 p-4 bg-muted rounded-lg">
+                    <h4 className="font-semibold mb-2">Current Stock Levels</h4>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Total Quantity</p>
+                        <p className="text-lg font-bold">{stockLevel.quantity}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Available</p>
+                        <p className="text-lg font-bold text-green-600">{stockLevel.available_stock}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Reserved</p>
+                        <p className="text-lg font-bold text-orange-600">{stockLevel.reserved_stock}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground">Available</p>
-                    <p className="text-lg font-bold text-green-600">{stockLevel.available_stock}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Reserved</p>
-                    <p className="text-lg font-bold text-orange-600">{stockLevel.reserved_stock}</p>
-                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="sku">SKU *</Label>
+                  <Input id="sku" {...register("sku")} />
+                  {errors.sku && <p className="text-sm text-destructive">{errors.sku.message}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="name">Product Name *</Label>
+                  <Input id="name" {...register("name")} />
+                  {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+                </div>
+
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea id="description" {...register("description")} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="category_id">Category</Label>
+                  <Select
+                    value={watch("category_id") || "none"}
+                    onValueChange={(value) => setValue("category_id", value === "none" ? "" : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {categories?.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="unit_of_measure">Unit of Measure</Label>
+                  <Input id="unit_of_measure" {...register("unit_of_measure")} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="unit_price">Sales Price *</Label>
+                  <Input id="unit_price" type="number" step="0.01" {...register("unit_price")} />
+                  {errors.unit_price && <p className="text-sm text-destructive">{errors.unit_price.message}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cost_price">Cost Price *</Label>
+                  <Input id="cost_price" type="number" step="0.01" {...register("cost_price")} />
+                  {errors.cost_price && <p className="text-sm text-destructive">{errors.cost_price.message}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reorder_level">Reorder Level *</Label>
+                  <Input id="reorder_level" type="number" {...register("reorder_level")} />
+                  {errors.reorder_level && <p className="text-sm text-destructive">{errors.reorder_level.message}</p>}
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="is_active"
+                    checked={isActive}
+                    onCheckedChange={(checked) => setValue("is_active", checked)}
+                  />
+                  <Label htmlFor="is_active">Active</Label>
                 </div>
               </div>
-            )}
 
-            <div className="space-y-2">
-              <Label htmlFor="sku">SKU *</Label>
-              <Input id="sku" {...register("sku")} />
-              {errors.sku && <p className="text-sm text-destructive">{errors.sku.message}</p>}
-            </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending ? "Saving..." : product ? "Update Product" : "Create Product"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </TabsContent>
 
-            <div className="space-y-2">
-              <Label htmlFor="name">Product Name *</Label>
-              <Input id="name" {...register("name")} />
-              {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-            </div>
+          {product && (
+            <TabsContent value="inventory" className="space-y-4">
+              {stockLevel && (
+                <>
+                  <div className="p-4 bg-muted rounded-lg">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2">
+                      <Package className="h-5 w-5" />
+                      {product.name} (SKU: {product.sku})
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      Current stock: <span className="font-semibold">{stockLevel.quantity} units</span>
+                    </p>
+                  </div>
 
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea id="description" {...register("description")} />
-            </div>
+                  <Tabs defaultValue="add" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="add">
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </TabsTrigger>
+                      <TabsTrigger value="remove">
+                        <Minus className="h-4 w-4 mr-1" />
+                        Remove
+                      </TabsTrigger>
+                      <TabsTrigger value="set">
+                        <Package className="h-4 w-4 mr-1" />
+                        Set
+                      </TabsTrigger>
+                    </TabsList>
 
-            <div className="space-y-2">
-              <Label htmlFor="category_id">Category</Label>
-              <Select
-                value={watch("category_id") || "none"}
-                onValueChange={(value) => setValue("category_id", value === "none" ? "" : value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {categories?.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                    <TabsContent value="add" className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="add-quantity">Quantity to Add</Label>
+                        <Input
+                          id="add-quantity"
+                          type="number"
+                          min="0"
+                          placeholder="Enter quantity"
+                          value={adjustmentQuantity}
+                          onChange={(e) => setAdjustmentQuantity(e.target.value)}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          New total: {stockLevel.quantity + (Number(adjustmentQuantity) || 0)} units
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="add-notes">Notes (optional)</Label>
+                        <Textarea
+                          id="add-notes"
+                          placeholder="Reason for adjustment..."
+                          value={adjustmentNotes}
+                          onChange={(e) => setAdjustmentNotes(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        onClick={() => handleAdjustment('add')}
+                        disabled={isAdjusting || !adjustmentQuantity}
+                        className="w-full"
+                      >
+                        Add Stock
+                      </Button>
+                    </TabsContent>
 
-            <div className="space-y-2">
-              <Label htmlFor="unit_of_measure">Unit of Measure</Label>
-              <Input id="unit_of_measure" {...register("unit_of_measure")} />
-            </div>
+                    <TabsContent value="remove" className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="remove-quantity">Quantity to Remove</Label>
+                        <Input
+                          id="remove-quantity"
+                          type="number"
+                          min="0"
+                          max={stockLevel.quantity}
+                          placeholder="Enter quantity"
+                          value={adjustmentQuantity}
+                          onChange={(e) => setAdjustmentQuantity(e.target.value)}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          New total: {Math.max(0, stockLevel.quantity - (Number(adjustmentQuantity) || 0))} units
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="remove-notes">Notes (optional)</Label>
+                        <Textarea
+                          id="remove-notes"
+                          placeholder="Reason for adjustment..."
+                          value={adjustmentNotes}
+                          onChange={(e) => setAdjustmentNotes(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        onClick={() => handleAdjustment('remove')}
+                        disabled={isAdjusting || !adjustmentQuantity}
+                        variant="destructive"
+                        className="w-full"
+                      >
+                        Remove Stock
+                      </Button>
+                    </TabsContent>
 
-            <div className="space-y-2">
-              <Label htmlFor="unit_price">Sales Price *</Label>
-              <Input id="unit_price" type="number" step="0.01" {...register("unit_price")} />
-              {errors.unit_price && <p className="text-sm text-destructive">{errors.unit_price.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cost_price">Cost Price *</Label>
-              <Input id="cost_price" type="number" step="0.01" {...register("cost_price")} />
-              {errors.cost_price && <p className="text-sm text-destructive">{errors.cost_price.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="reorder_level">Reorder Level *</Label>
-              <Input id="reorder_level" type="number" {...register("reorder_level")} />
-              {errors.reorder_level && <p className="text-sm text-destructive">{errors.reorder_level.message}</p>}
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="is_active"
-                checked={isActive}
-                onCheckedChange={(checked) => setValue("is_active", checked)}
-              />
-              <Label htmlFor="is_active">Active</Label>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Saving..." : product ? "Update Product" : "Create Product"}
-            </Button>
-          </DialogFooter>
-        </form>
+                    <TabsContent value="set" className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="set-quantity">Set Quantity To</Label>
+                        <Input
+                          id="set-quantity"
+                          type="number"
+                          min="0"
+                          placeholder="Enter new quantity"
+                          value={adjustmentQuantity}
+                          onChange={(e) => setAdjustmentQuantity(e.target.value)}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          Change: {(Number(adjustmentQuantity) || 0) - stockLevel.quantity > 0 ? '+' : ''}{(Number(adjustmentQuantity) || 0) - stockLevel.quantity} units
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="set-notes">Notes (optional)</Label>
+                        <Textarea
+                          id="set-notes"
+                          placeholder="Reason for adjustment..."
+                          value={adjustmentNotes}
+                          onChange={(e) => setAdjustmentNotes(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        onClick={() => handleAdjustment('set')}
+                        disabled={isAdjusting || !adjustmentQuantity}
+                        className="w-full"
+                      >
+                        Set Stock Level
+                      </Button>
+                    </TabsContent>
+                  </Tabs>
+                </>
+              )}
+            </TabsContent>
+          )}
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, Upload, AlertTriangle, TrendingUp, Search, FileDown, History, Package2, TrendingDown, Minus, ArrowUpDown, ArrowUp, ArrowDown, Settings } from "lucide-react";
+import { Package, Upload, AlertTriangle, TrendingUp, Search, FileDown, History, Package2, TrendingDown, Minus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -16,7 +16,6 @@ import {
 import { ImportInventoryDialog } from "@/components/ImportInventoryDialog";
 import { InboundLogDialog } from "@/components/InboundLogDialog";
 import { ProductFormDialog } from "@/components/ProductFormDialog";
-import { AdjustInventoryDialog } from "@/components/AdjustInventoryDialog";
 import { useInventoryData } from "@/hooks/useInventoryData";
 import { StatsCard } from "@/components/inventory/StatsCard";
 import { CategoryBadge } from "@/components/inventory/CategoryBadge";
@@ -34,7 +33,6 @@ const Inventory = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [inboundLogOpen, setInboundLogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
-  const [adjustInventoryProduct, setAdjustInventoryProduct] = useState<any>(null);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -489,31 +487,11 @@ const Inventory = () => {
                         </TableCell>
                         <TableCell className="font-mono text-sm">{item.sku}</TableCell>
                         <TableCell>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex-1 cursor-pointer" onClick={() => setSelectedProduct(item.product_id)}>
-                              <div className="font-medium">{item.name}</div>
-                              {item.description && (
-                                <div className="text-xs text-muted-foreground">{item.description}</div>
-                              )}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 gap-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setAdjustInventoryProduct({
-                                  id: item.product_id,
-                                  name: item.name,
-                                  sku: item.sku,
-                                  current_level: item.current_level,
-                                  warehouse_id: item.warehouse_id,
-                                });
-                              }}
-                            >
-                              <Settings className="h-3 w-3" />
-                              Adjust
-                            </Button>
+                          <div className="cursor-pointer" onClick={() => setSelectedProduct(item.product_id)}>
+                            <div className="font-medium">{item.name}</div>
+                            {item.description && (
+                              <div className="text-xs text-muted-foreground">{item.description}</div>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -567,15 +545,6 @@ const Inventory = () => {
         onOpenChange={setInboundLogOpen}
       />
 
-      <AdjustInventoryDialog
-        open={!!adjustInventoryProduct}
-        onOpenChange={(open) => {
-          if (!open) setAdjustInventoryProduct(null);
-        }}
-        product={adjustInventoryProduct}
-        onSuccess={() => refetch()}
-      />
-
       {selectedProduct && (
         <ProductFormDialog
           open={!!selectedProduct}
@@ -586,6 +555,7 @@ const Inventory = () => {
             }
           }}
           product={inventory?.find(i => i.product_id === selectedProduct)}
+          onInventoryUpdate={() => refetch()}
         />
       )}
     </DashboardLayout>
