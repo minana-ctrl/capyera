@@ -28,35 +28,35 @@ export function AppSidebar() {
   const { open } = useSidebar();
 
   return (
-    <Sidebar className={`${open ? "w-60" : "w-14"} border-r bg-white`}>
+    <Sidebar className={`${open ? "w-60" : "w-14"} border-r bg-white shadow-sm`}>
       <SidebarContent>
-        <div className="p-4 border-b">
+        <div className="p-4 border-b bg-white">
           <h2 className={`font-bold text-lg text-primary transition-opacity ${!open && "opacity-0"}`}>
             Capyera
           </h2>
         </div>
         
         <SidebarGroup>
-          <SidebarGroupLabel className={!open ? "sr-only" : ""}>
+          <SidebarGroupLabel className={`${!open ? "sr-only" : ""} text-muted-foreground text-xs font-medium px-4 py-2`}>
             Menu
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="px-2 space-y-1">
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 ${
+                        `flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
                           isActive
-                            ? "bg-primary text-primary-foreground font-medium"
-                            : "hover:bg-accent"
+                            ? "bg-primary text-white font-medium shadow-sm"
+                            : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                         }`
                       }
                     >
-                      <item.icon className="h-5 w-5" />
-                      {open && <span>{item.title}</span>}
+                      <item.icon className="h-5 w-5 flex-shrink-0" />
+                      {open && <span className="text-sm">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
