@@ -291,7 +291,7 @@ export default function Orders() {
                     "Clear Orders"
                   )}
                 </Button>
-                <Button onClick={() => setCsvImportOpen(true)} variant="outline">
+                <Button onClick={() => setCsvImportOpen(true)} variant="outline" disabled={isImporting}>
                   <Upload className="mr-2 h-4 w-4" />
                   Import CSV
                 </Button>
