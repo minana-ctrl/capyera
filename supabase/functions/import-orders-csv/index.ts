@@ -147,16 +147,45 @@ Deno.serve(async (req) => {
         }
       }
 
-      console.log(`Total orders inserted: ${insertedOrderIds.length}`);
-      const orderIdMap = new Map(insertedOrderIds.map(o => [o.order_number, o.id]));
+      console.log(`Total orders inserted (returned): ${insertedOrderIds.length}`);
+      let orderIdMap = new Map(insertedOrderIds.map((o: any) => [String(o.order_number).trim(), o.id]));
+
+      // Fallback: ensure we have IDs for ALL orders we just upserted
+      const neededOrderNumbers = ordersArray
+        .map((o: any) => String(o.order_number).trim())
+        .filter((num: string) => !orderIdMap.has(num));
+
+      if (neededOrderNumbers.length > 0) {
+        console.log(`Fetching ${neededOrderNumbers.length} missing order IDs...`);
+        // Chunk IN queries to avoid URL size limits
+        const chunkSize = 1000;
+        for (let i = 0; i < neededOrderNumbers.length; i += chunkSize) {
+          const chunk = neededOrderNumbers.slice(i, i + chunkSize);
+          const { data, error } = await supabaseClient
+            .from('orders')
+            .select('id, order_number')
+            .in('order_number', chunk);
+          if (error) {
+            console.error('Error fetching order IDs:', error);
+          } else if (data) {
+            data.forEach((row: any) => {
+              orderIdMap.set(String(row.order_number).trim(), row.id);
+            });
+          }
+        }
+        console.log(`Order ID map size after fetch: ${orderIdMap.size}`);
+      }
 
       // Map and insert line items
       const lineItemsWithIds = lineItems
         .map(item => ({
           ...item,
-          order_id: orderIdMap.get(item.order_number),
+          order_number: String(item.order_number).trim(),
+          order_id: orderIdMap.get(String(item.order_number).trim()),
         }))
         .filter(item => item.order_id);
+
+      console.log(`Line items built: ${lineItems.length}, linked to orders: ${lineItemsWithIds.length}`);
 
       console.log(`Inserting ${lineItemsWithIds.length} line items from CSV ${csvIndex + 1}...`);
       
