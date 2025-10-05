@@ -37,21 +37,43 @@ export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrde
     setIsLoading(true);
 
     try {
-      // Read all CSV files
-      const csvData = await Promise.all(
-        files.map(file => file.text())
-      );
+      let totalOrdersImported = 0;
+      let totalLineItemsImported = 0;
 
-      // Call edge function
-      const { data, error } = await supabase.functions.invoke('import-orders-csv', {
-        body: { csvData, clearData: true }
+      // Clear data before first import
+      toast({
+        title: "Clearing existing data...",
+        description: "This may take a moment",
       });
 
-      if (error) throw error;
+      await supabase.functions.invoke('import-orders-csv', {
+        body: { csvData: [], clearData: true }
+      });
+
+      // Process files one at a time
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        toast({
+          title: `Processing file ${i + 1} of ${files.length}`,
+          description: file.name,
+        });
+
+        const csvText = await file.text();
+
+        const { data, error } = await supabase.functions.invoke('import-orders-csv', {
+          body: { csvData: [csvText], clearData: false }
+        });
+
+        if (error) throw error;
+
+        totalOrdersImported += data.ordersImported || 0;
+        totalLineItemsImported += data.lineItemsImported || 0;
+      }
 
       toast({
         title: "Import successful",
-        description: `Imported ${data.ordersImported} orders with ${data.lineItemsImported} line items`,
+        description: `Imported ${totalOrdersImported} orders with ${totalLineItemsImported} line items`,
       });
 
       onSuccess();
