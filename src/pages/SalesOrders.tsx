@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatPacificTime } from "@/lib/timezones";
 
 const SalesOrders = () => {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
@@ -115,7 +116,7 @@ const SalesOrders = () => {
                         <TableCell>
                           <Badge variant="outline">{order.warehouses?.name || "N/A"}</Badge>
                         </TableCell>
-                        <TableCell>{new Date(order.order_date).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatPacificTime(order.order_date, "MMM d, yyyy")}</TableCell>
                         <TableCell className="font-semibold">
                           ${Number(order.total_amount).toFixed(2)}
                         </TableCell>
@@ -165,7 +166,7 @@ const SalesOrders = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Order Date</p>
-                  <p className="font-medium">{new Date(selectedOrder.order_date).toLocaleDateString()}</p>
+                  <p className="font-medium">{formatPacificTime(selectedOrder.order_date, "MMM d, yyyy")}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Total Amount</p>

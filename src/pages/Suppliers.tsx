@@ -18,6 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { formatPacificTime } from "@/lib/timezones";
 
 const Suppliers = () => {
   const [formOpen, setFormOpen] = useState(false);
@@ -167,7 +168,7 @@ const Suppliers = () => {
                       )}
 
                       <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                        <span>Added {new Date(supplier.created_at).toLocaleDateString()}</span>
+                        <span>Added {formatPacificTime(supplier.created_at, "MMM d, yyyy")}</span>
                       </div>
                     </CardContent>
                   </Card>

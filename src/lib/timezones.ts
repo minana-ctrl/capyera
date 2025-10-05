@@ -31,3 +31,32 @@ export const getPacificEndOfDay = (date: Date): Date => {
   const dateStr = `${year}-${month}-${day}T23:59:59.999`;
   return fromZonedTime(dateStr, PACIFIC_TZ);
 };
+
+/**
+ * Formats a date/timestamp string in Pacific Time
+ * @param date - ISO string or Date object (stored in UTC)
+ * @param formatStr - Format string (e.g., "MMM d, yyyy", "MMM d, yyyy HH:mm", "HH:mm:ss")
+ */
+export const formatPacificTime = (date: string | Date, formatStr: string = "MMM d, yyyy"): string => {
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const pacificDate = toZonedTime(dateObj, PACIFIC_TZ);
+  
+  // Manual formatting to avoid importing date-fns format
+  const year = pacificDate.getFullYear();
+  const month = pacificDate.getMonth();
+  const day = pacificDate.getDate();
+  const hours = pacificDate.getHours();
+  const minutes = pacificDate.getMinutes();
+  const seconds = pacificDate.getSeconds();
+  
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  
+  return formatStr
+    .replace('yyyy', String(year))
+    .replace('MMM', monthNames[month])
+    .replace('dd', String(day).padStart(2, '0'))
+    .replace('d', String(day))
+    .replace('HH', String(hours).padStart(2, '0'))
+    .replace('mm', String(minutes).padStart(2, '0'))
+    .replace('ss', String(seconds).padStart(2, '0'));
+};

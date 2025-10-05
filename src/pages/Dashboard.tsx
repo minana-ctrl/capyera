@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SalesTrendCard } from "@/components/dashboard/SalesTrendCard";
 import { useState } from "react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { getPacificStartOfDay, getPacificEndOfDay } from "@/lib/timezones";
+import { getPacificStartOfDay, getPacificEndOfDay, formatPacificTime } from "@/lib/timezones";
 
 const Dashboard = () => {
 
@@ -194,7 +194,7 @@ const Dashboard = () => {
           <div>
             <h2 className="text-3xl font-bold">Dashboard</h2>
             <p className="text-muted-foreground">
-              Real-time overview • Last updated: {new Date().toLocaleTimeString()}
+              Real-time overview • Last updated: {formatPacificTime(new Date(), "HH:mm:ss")} PT
             </p>
           </div>
           <div className="flex items-center gap-3">

@@ -8,10 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Loader2, Webhook, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { format, subDays } from "date-fns";
-import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
+import { subDays } from "date-fns";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ImportOrdersDialog } from "@/components/ImportOrdersDialog";
+import { getPacificStartOfDay, getPacificEndOfDay, formatPacificTime } from "@/lib/timezones";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
@@ -36,26 +36,6 @@ export default function Orders() {
   const { data: ordersData, isLoading, refetch } = useQuery({
     queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString(), page],
     queryFn: async () => {
-      const PACIFIC_TZ = 'America/Los_Angeles';
-      
-      const getPacificStartOfDay = (date: Date) => {
-        const pacificDate = toZonedTime(date, PACIFIC_TZ);
-        const year = pacificDate.getFullYear();
-        const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
-        const day = String(pacificDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}T00:00:00`;
-        return fromZonedTime(dateStr, PACIFIC_TZ);
-      };
-
-      const getPacificEndOfDay = (date: Date) => {
-        const pacificDate = toZonedTime(date, PACIFIC_TZ);
-        const year = pacificDate.getFullYear();
-        const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
-        const day = String(pacificDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}T23:59:59.999`;
-        return fromZonedTime(dateStr, PACIFIC_TZ);
-      };
-
       // Use Pacific time for date range filtering
       const fromISO = getPacificStartOfDay(dateRange.from).toISOString();
       const toISO = getPacificEndOfDay(dateRange.to).toISOString();
@@ -331,7 +311,7 @@ export default function Orders() {
                 {importLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-2 bg-muted rounded">
                     <span>
-                      {format(new Date(log.created_at), "MMM d, yyyy HH:mm")}
+                      {formatPacificTime(log.created_at, "MMM d, yyyy HH:mm")}
                     </span>
                     <div className="flex items-center gap-2">
                       <Badge variant={log.status === "completed" ? "default" : "secondary"}>
@@ -441,7 +421,7 @@ export default function Orders() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {formatInTimeZone(new Date(order.placed_at), "UTC", "MMM d, yyyy")}
+                        {formatPacificTime(order.placed_at, "MMM d, yyyy")}
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
