@@ -82,10 +82,14 @@ serve(async (req) => {
                 continue;
               }
               
-              // Find product by SKU
+              // Calculate actual sold prices (what customer paid after discounts)
+              const actualUnitPrice = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount || item.discountedUnitPriceSet?.shopMoney?.amount || 0);
+              const actualTotalPrice = parseFloat(item.originalTotalSet?.shopMoney?.amount || item.discountedTotalSet?.shopMoney?.amount || actualUnitPrice * item.quantity);
+              
+              // Find product by SKU for product_id reference
               const { data: product } = await supabase
                 .from('products')
-                .select('id, name, unit_price')
+                .select('id, name')
                 .eq('sku', item.sku)
                 .maybeSingle();
 
@@ -96,17 +100,17 @@ serve(async (req) => {
                     order_id: orderData.id,
                     product_id: product.id,
                     sku: item.sku,
-                    product_name: product.name,
+                    product_name: item.name || product.name,
                     quantity: item.quantity,
-                    unit_price: product.unit_price,
-                    total_price: product.unit_price * item.quantity,
+                    unit_price: actualUnitPrice,
+                    total_price: actualTotalPrice,
                   });
                 
                 if (lineItemError) {
                   console.error(`Error inserting line item for SKU ${item.sku}:`, lineItemError);
                 }
               } else {
-                // Product not found - still insert line item with SKU for reference
+                // Product not found - still insert line item with actual sold prices
                 console.warn(`Product not found for SKU: ${item.sku}`);
                 const { error: lineItemError } = await supabase
                   .from('order_line_items')
@@ -114,10 +118,10 @@ serve(async (req) => {
                     order_id: orderData.id,
                     product_id: null,
                     sku: item.sku,
-                    product_name: `Unknown Product (${item.sku})`,
+                    product_name: item.name || `Unknown Product (${item.sku})`,
                     quantity: item.quantity,
-                    unit_price: 0,
-                    total_price: 0,
+                    unit_price: actualUnitPrice,
+                    total_price: actualTotalPrice,
                   });
                 
                 if (lineItemError) {

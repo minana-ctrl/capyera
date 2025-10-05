@@ -125,14 +125,18 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
   for (const item of shopifyOrder.line_items || []) {
     const sku = item.sku || item.variant_id?.toString();
 
-    // Find product by SKU
+    // Find product by SKU for product_id reference
     const { data: product } = await supabase
       .from('products')
       .select('id')
       .eq('sku', sku)
-      .single();
+      .maybeSingle();
 
-    // Insert line item
+    // Use actual sold price (what customer paid after all discounts)
+    const actualUnitPrice = parseFloat(item.price);
+    const actualTotalPrice = actualUnitPrice * item.quantity;
+
+    // Insert line item with actual sold prices
     await supabase
       .from('order_line_items')
       .insert({
@@ -140,8 +144,8 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
         sku: sku || 'UNKNOWN',
         product_name: item.name,
         quantity: item.quantity,
-        unit_price: parseFloat(item.price),
-        total_price: parseFloat(item.price) * item.quantity,
+        unit_price: actualUnitPrice,
+        total_price: actualTotalPrice,
         product_id: product?.id || null,
         bundle_id: null,
       });
