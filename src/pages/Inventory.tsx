@@ -52,6 +52,20 @@ const Inventory = () => {
     },
   });
 
+  const { data: selectedProductData } = useQuery({
+    queryKey: ["product", selectedProduct],
+    enabled: !!selectedProduct,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", selectedProduct)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   // Calculate overall statistics
   const stats = useMemo(() => {
     if (!inventory) return null;
@@ -545,7 +559,7 @@ const Inventory = () => {
         onOpenChange={setInboundLogOpen}
       />
 
-      {selectedProduct && (
+      {selectedProduct && selectedProductData && (
         <ProductFormDialog
           open={!!selectedProduct}
           onOpenChange={(open) => {
@@ -554,7 +568,7 @@ const Inventory = () => {
               refetch();
             }
           }}
-          product={inventory?.find(i => i.product_id === selectedProduct)}
+          product={selectedProductData}
           onInventoryUpdate={() => refetch()}
         />
       )}
