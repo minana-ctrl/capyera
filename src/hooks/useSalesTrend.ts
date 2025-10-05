@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { eachDayOfInterval, format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
+import { PACIFIC_TZ } from "@/lib/timezones";
 
 interface SalesTrendData {
   date: string;
@@ -13,7 +14,6 @@ export const useSalesTrend = (from: Date, to: Date) => {
   return useQuery({
     queryKey: ["sales-trend", from.toISOString(), to.toISOString()],
     queryFn: async (): Promise<SalesTrendData[]> => {
-      const PACIFIC_TZ = 'America/Los_Angeles';
       
       // Query the pre-aggregated daily_sales_summary table using Pacific time dates
       const { data: summaries, error } = await supabase

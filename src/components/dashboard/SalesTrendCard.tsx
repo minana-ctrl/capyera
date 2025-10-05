@@ -8,28 +8,9 @@ import { DateRangePresets } from "./DateRangePresets";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { useSalesTrend } from "@/hooks/useSalesTrend";
 import { subDays } from "date-fns";
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { getPacificStartOfDay, getPacificEndOfDay } from "@/lib/timezones";
 
 export const SalesTrendCard = () => {
-  const PACIFIC_TZ = 'America/Los_Angeles';
-  
-  const getPacificStartOfDay = (date: Date) => {
-    const pacificDate = toZonedTime(date, PACIFIC_TZ);
-    const year = pacificDate.getFullYear();
-    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
-    const day = String(pacificDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}T00:00:00`;
-    return fromZonedTime(dateStr, PACIFIC_TZ);
-  };
-
-  const getPacificEndOfDay = (date: Date) => {
-    const pacificDate = toZonedTime(date, PACIFIC_TZ);
-    const year = pacificDate.getFullYear();
-    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
-    const day = String(pacificDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}T23:59:59.999`;
-    return fromZonedTime(dateStr, PACIFIC_TZ);
-  };
 
   const [dateRange, setDateRange] = useState({
     from: getPacificStartOfDay(subDays(new Date(), 29)),

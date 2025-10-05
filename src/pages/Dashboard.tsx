@@ -5,35 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalesTrendCard } from "@/components/dashboard/SalesTrendCard";
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { getPacificStartOfDay, getPacificEndOfDay } from "@/lib/timezones";
 
 const Dashboard = () => {
-
-  const PACIFIC_TZ = 'America/Los_Angeles';
-  
-  const getPacificStartOfDay = (date: Date) => {
-    // First convert to Pacific time to get the correct Pacific date
-    const pacificDate = toZonedTime(date, PACIFIC_TZ);
-    const year = pacificDate.getFullYear();
-    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
-    const day = String(pacificDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}T00:00:00`;
-    // Convert Pacific midnight to UTC
-    return fromZonedTime(dateStr, PACIFIC_TZ);
-  };
-
-  const getPacificEndOfDay = (date: Date) => {
-    // First convert to Pacific time to get the correct Pacific date
-    const pacificDate = toZonedTime(date, PACIFIC_TZ);
-    const year = pacificDate.getFullYear();
-    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
-    const day = String(pacificDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}T23:59:59.999`;
-    // Convert Pacific end of day to UTC
-    return fromZonedTime(dateStr, PACIFIC_TZ);
-  };
 
   const [metricsDateRange, setMetricsDateRange] = useState({
     from: getPacificStartOfDay(new Date()),
