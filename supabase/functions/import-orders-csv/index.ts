@@ -20,7 +20,6 @@ Deno.serve(async (req) => {
 
     if (clearData && (!csvData || csvData.length === 0)) {
       console.log('Clearing existing data in background...');
-      // Run clears in background to avoid request timeouts/compute limits
       // deno-lint-ignore no-explicit-any
       (globalThis as any).EdgeRuntime?.waitUntil((async () => {
         await supabaseClient.from('order_line_items').delete().not('id', 'is', null);
@@ -54,9 +53,12 @@ Deno.serve(async (req) => {
     
     let totalOrdersImported = 0;
     let totalLineItemsImported = 0;
-    const batchSize = 50; // Smaller batches to reduce memory
+    let totalRowsProcessed = 0;
+    let totalRowsSkipped = 0;
+    let totalOrdersFailed = 0;
+    let totalLineItemsFailed = 0;
+    const batchSize = 50;
 
-    // Process one CSV at a time to reduce memory usage
     for (let csvIndex = 0; csvIndex < csvData.length; csvIndex++) {
       const csv = csvData[csvIndex];
       console.log(`Processing CSV ${csvIndex + 1}/${csvData.length}...`);
@@ -64,214 +66,265 @@ Deno.serve(async (req) => {
       const orders = new Map<string, any>();
       const lineItems: any[] = [];
       
-      // Parse CSV properly handling multiline quoted fields
-      const rows = parseCSV(csv);
-      if (rows.length === 0) continue;
-      
-      const headers = rows[0];
-      console.log(`Found ${headers.length} columns, ${rows.length - 1} rows`);
-      
-      for (let i = 1; i < rows.length; i++) {
-        const values = rows[i];
-        
-        // Try to salvage data even if column count doesn't match exactly
-        if (values.length !== headers.length) {
-          console.warn(`Row ${i} has ${values.length} columns, expected ${headers.length}`);
-          
-          // Skip only if the row is clearly invalid (too few critical columns)
-          if (values.length < 10) {
-            continue;
-          }
-          
-          // Pad or truncate to match header length
-          while (values.length < headers.length) {
-            values.push('');
-          }
-          if (values.length > headers.length) {
-            values.length = headers.length;
-          }
+      try {
+        const rows = parseCSV(csv);
+        if (rows.length === 0) {
+          console.warn(`CSV ${csvIndex + 1} is empty, skipping`);
+          continue;
         }
         
-        const row: any = {};
-        headers.forEach((header: string, idx: number) => {
-          row[header] = values[idx] || '';
-        });
-
-        const orderNumber = row['Name'];
-        if (!orderNumber || !orderNumber.trim()) continue;
-
-        // Only capture order data from first row (has Financial Status populated)
-        if (!orders.has(orderNumber) && row['Financial Status']) {
-          const placedAt = row['Created at'] ? new Date(row['Created at']).toISOString() : new Date().toISOString();
-          const fulfilledAt = row['Fulfilled at'] && row['Fulfilled at'].trim() 
-            ? new Date(row['Fulfilled at']).toISOString() 
-            : null;
-          
-          const orderData = {
-            order_number: orderNumber.replace('#', ''),
-            shopify_order_id: row['Id']?.toString() || null,
-            customer_email: row['Email'] || null,
-            customer_name: row['Billing Name'] || row['Shipping Name'] || null,
-            status: row['Financial Status']?.toLowerCase() === 'paid' ? 'completed' : 'pending',
-            fulfillment_status: row['Fulfillment Status']?.toLowerCase() || 'unfulfilled',
-            placed_at: placedAt,
-            fulfilled_at: fulfilledAt,
-            total_amount: parseFloat(row['Total']) || 0,
-            product_revenue: parseFloat(row['Subtotal']) || 0,
-            shipping_cost: parseFloat(row['Shipping']) || 0,
-            currency: row['Currency'] || 'USD',
-            country_code: row['Billing Country'] || null,
-          };
-          
-          console.log(`Order ${orderNumber}: shopify_id=${orderData.shopify_order_id}, country=${orderData.country_code}, fulfilled=${orderData.fulfilled_at}`);
-          orders.set(orderNumber, orderData);
-        }
-
-        // Capture line items from all rows
-        if (row['Lineitem name'] && row['Lineitem name'].trim()) {
-          const cleanOrderNum = orderNumber.replace('#', '').trim();
-          lineItems.push({
-            order_number: cleanOrderNum,
-            product_name: row['Lineitem name'],
-            sku: row['Lineitem sku'] || '',
-            quantity: parseInt(row['Lineitem quantity']) || 1,
-            unit_price: parseFloat(row['Lineitem price']) || 0,
-            total_price: parseFloat(row['Lineitem price']) * (parseInt(row['Lineitem quantity']) || 1),
-          });
-          console.log(`Line item added: order=${cleanOrderNum}, product=${row['Lineitem name']}, qty=${row['Lineitem quantity']}`);
-        }
-      }
-
-      // Insert orders for this CSV
-      const ordersArray = Array.from(orders.values());
-      console.log(`Inserting ${ordersArray.length} orders from CSV ${csvIndex + 1}...`);
-      
-      let insertedOrderIds: any[] = [];
-      
-      for (let i = 0; i < ordersArray.length; i += batchSize) {
-        const batch = ordersArray.slice(i, i + batchSize);
-        const { data, error } = await supabaseClient.from('orders').upsert(batch, {
-          onConflict: 'order_number',
-          ignoreDuplicates: false
-        }).select('id, order_number');
+        const headers = rows[0];
+        console.log(`Found ${headers.length} columns, ${rows.length - 1} rows`);
         
-        if (error) {
-          console.error('Error inserting orders batch:', error);
-        } else if (data) {
-          insertedOrderIds.push(...data);
-          console.log(`✓ Inserted ${data.length} orders in batch`);
+        const requiredHeaders = ['Name', 'Email', 'Created at'];
+        const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+        if (missingHeaders.length > 0) {
+          console.error(`CSV ${csvIndex + 1} missing required headers: ${missingHeaders.join(', ')}`);
+          continue;
         }
-      }
+        
+        for (let i = 1; i < rows.length; i++) {
+          totalRowsProcessed++;
+          const values = rows[i];
+          
+          try {
+            if (values.length !== headers.length) {
+              if (values.length < 10) {
+                totalRowsSkipped++;
+                continue;
+              }
+              
+              while (values.length < headers.length) {
+                values.push('');
+              }
+              if (values.length > headers.length) {
+                values.length = headers.length;
+              }
+            }
+            
+            const row: any = {};
+            headers.forEach((header: string, idx: number) => {
+              row[header] = values[idx] || '';
+            });
 
-      console.log(`Total orders inserted (returned): ${insertedOrderIds.length}`);
-      let orderIdMap = new Map(insertedOrderIds.map((o: any) => [String(o.order_number).trim(), o.id]));
+            const orderNumber = row['Name'];
+            if (!orderNumber || !orderNumber.trim()) {
+              totalRowsSkipped++;
+              continue;
+            }
 
-      // Fallback: ensure we have IDs for ALL orders we just upserted
-      const neededOrderNumbers = ordersArray
-        .map((o: any) => String(o.order_number).trim())
-        .filter((num: string) => !orderIdMap.has(num));
+            if (!orders.has(orderNumber) && row['Financial Status']) {
+              try {
+                const placedAt = row['Created at'] ? new Date(row['Created at']).toISOString() : new Date().toISOString();
+                const fulfilledAt = row['Fulfilled at'] && row['Fulfilled at'].trim() 
+                  ? new Date(row['Fulfilled at']).toISOString() 
+                  : null;
+                
+                const orderData: any = {
+                  order_number: orderNumber.replace('#', ''),
+                  shopify_order_id: row['Id']?.toString() || null,
+                  customer_email: row['Email'] || null,
+                  customer_name: row['Billing Name'] || row['Shipping Name'] || null,
+                  status: (row['Financial Status'] || 'pending').toLowerCase(),
+                  fulfillment_status: (row['Fulfillment Status'] || 'unfulfilled').toLowerCase(),
+                  total_amount: parseFloat(row['Total']) || 0,
+                  product_revenue: parseFloat(row['Subtotal']) || 0,
+                  shipping_cost: parseFloat(row['Shipping']) || 0,
+                  currency: row['Currency'] || 'USD',
+                  country_code: row['Shipping Country'] || row['Billing Country'] || null,
+                  placed_at: placedAt,
+                  fulfilled_at: fulfilledAt,
+                  cancelled_at: row['Cancelled at'] && row['Cancelled at'].trim() ? new Date(row['Cancelled at']).toISOString() : null,
+                  is_new_customer: null,
+                  shipping_address: null,
+                };
 
-      if (neededOrderNumbers.length > 0) {
-        console.log(`Fetching ${neededOrderNumbers.length} missing order IDs...`);
-        // Chunk IN queries to avoid URL size limits
-        const chunkSize = 1000;
-        for (let i = 0; i < neededOrderNumbers.length; i += chunkSize) {
-          const chunk = neededOrderNumbers.slice(i, i + chunkSize);
-          const { data, error } = await supabaseClient
+                if (row['Shipping Name'] || row['Shipping Address1']) {
+                  try {
+                    orderData.shipping_address = {
+                      name: row['Shipping Name'] || null,
+                      address1: row['Shipping Address1'] || null,
+                      address2: row['Shipping Address2'] || null,
+                      city: row['Shipping City'] || null,
+                      province: row['Shipping Province'] || null,
+                      province_code: row['Shipping Province'] || null,
+                      zip: row['Shipping Zip'] || null,
+                      country: row['Shipping Country'] || null,
+                      country_code: row['Shipping Country'] || null,
+                      phone: row['Shipping Phone'] || null,
+                    };
+                  } catch (addrError) {
+                    console.warn(`Row ${i}: Failed to build shipping address`);
+                  }
+                }
+
+                orders.set(orderNumber, orderData);
+              } catch (orderError) {
+                totalOrdersFailed++;
+                console.error(`Row ${i}: Failed to parse order ${orderNumber}`);
+              }
+            }
+
+            if (row['Lineitem name']) {
+              try {
+                const lineItemData = {
+                  order_number: orderNumber.replace('#', ''),
+                  product_name: row['Lineitem name'],
+                  sku: row['Lineitem sku'] || '',
+                  quantity: parseInt(row['Lineitem quantity']) || 0,
+                  unit_price: parseFloat(row['Lineitem price']) || 0,
+                  total_price: parseFloat(row['Lineitem price']) * (parseInt(row['Lineitem quantity']) || 0),
+                };
+                
+                if (lineItemData.quantity > 0) {
+                  lineItems.push(lineItemData);
+                }
+              } catch (itemError) {
+                totalLineItemsFailed++;
+                console.error(`Row ${i}: Failed to parse line item`);
+              }
+            }
+          } catch (rowError) {
+            totalRowsSkipped++;
+            console.error(`Row ${i}: Unexpected error`);
+          }
+        }
+
+        console.log(`CSV ${csvIndex + 1}: Extracted ${orders.size} orders, ${lineItems.length} line items`);
+
+        // Batch insert orders
+        const orderArray = Array.from(orders.values());
+        for (let i = 0; i < orderArray.length; i += batchSize) {
+          const batch = orderArray.slice(i, i + batchSize);
+          try {
+            const { data: insertedOrders, error } = await supabaseClient
+              .from('orders')
+              .upsert(batch, { onConflict: 'order_number' })
+              .select('id, order_number');
+
+            if (error) {
+              console.error(`Failed to insert orders batch:`, error.message);
+              totalOrdersFailed += batch.length;
+            } else {
+              console.log(`✓ Inserted ${batch.length} orders in batch`);
+              totalOrdersImported += insertedOrders?.length || 0;
+            }
+          } catch (batchError) {
+            console.error(`Exception inserting orders batch`);
+            totalOrdersFailed += batch.length;
+          }
+        }
+
+        // Fetch order IDs
+        const orderIdMap = new Map<string, string>();
+        try {
+          const { data: ordersFromDB } = await supabaseClient
             .from('orders')
             .select('id, order_number')
-            .in('order_number', chunk);
-          if (error) {
-            console.error('Error fetching order IDs:', error);
-          } else if (data) {
-            data.forEach((row: any) => {
-              orderIdMap.set(String(row.order_number).trim(), row.id);
+            .in('order_number', Array.from(orders.keys()).map(k => k.replace('#', '')));
+
+          if (ordersFromDB) {
+            ordersFromDB.forEach((o: any) => {
+              orderIdMap.set(o.order_number, o.id);
+              orderIdMap.set('#' + o.order_number, o.id);
             });
           }
+        } catch (fetchError) {
+          console.error('Failed to fetch order IDs');
         }
-        console.log(`Order ID map size after fetch: ${orderIdMap.size}`);
-      }
 
-      // Fetch all products to map SKUs to product IDs
-      console.log('Fetching products for SKU mapping...');
-      const { data: products, error: productsError } = await supabaseClient
-        .from('products')
-        .select('id, sku');
-      
-      const productSkuMap = new Map<string, string>();
-      if (products) {
-        products.forEach((p: any) => {
-          if (p.sku) {
-            productSkuMap.set(p.sku.trim().toLowerCase(), p.id);
-          }
-        });
-        console.log(`Loaded ${productSkuMap.size} products for SKU matching`);
-      } else if (productsError) {
-        console.error('Error fetching products:', productsError);
-      }
-
-      // Map and insert line items
-      const lineItemsWithIds = lineItems
-        .map(item => {
-          const orderNum = String(item.order_number).trim();
-          const orderId = orderIdMap.get(orderNum);
-          const productId = item.sku ? productSkuMap.get(item.sku.trim().toLowerCase()) : null;
+        // Fetch products for SKU mapping
+        console.log('Fetching products for SKU mapping...');
+        const productSkuMap = new Map<string, string>();
+        try {
+          const { data: products } = await supabaseClient
+            .from('products')
+            .select('id, sku');
           
-          return {
-            ...item,
-            order_number: orderNum,
-            order_id: orderId,
-            product_id: productId || null,
-          };
-        })
-        .filter(item => item.order_id);
-
-      console.log(`Line items built: ${lineItems.length}, linked to orders: ${lineItemsWithIds.length}`);
-      
-      const linkedToProducts = lineItemsWithIds.filter(li => li.product_id).length;
-      console.log(`Line items linked to products: ${linkedToProducts}/${lineItemsWithIds.length}`);
-      
-      if (lineItemsWithIds.length < lineItems.length) {
-        console.warn(`⚠️ ${lineItems.length - lineItemsWithIds.length} line items couldn't be linked to orders`);
-        console.log('Sample unlinked line item order_numbers:', lineItems.slice(0, 5).map(li => li.order_number));
-        console.log('Sample orderIdMap keys:', Array.from(orderIdMap.keys()).slice(0, 5));
-      }
-
-      console.log(`Inserting ${lineItemsWithIds.length} line items from CSV ${csvIndex + 1}...`);
-      
-      if (lineItemsWithIds.length === 0) {
-        console.warn('⚠️ No line items to insert. This might indicate a parsing issue.');
-        console.log('Sample order numbers from orders:', Array.from(orders.keys()).slice(0, 3));
-        console.log('Sample order numbers from lineItems:', lineItems.slice(0, 3).map(li => li.order_number));
-      }
-      
-      for (let i = 0; i < lineItemsWithIds.length; i += batchSize) {
-        const batch = lineItemsWithIds.slice(i, i + batchSize);
-        const { error } = await supabaseClient.from('order_line_items').insert(
-          batch.map(({ order_number, ...rest }) => rest)
-        );
-        if (error) {
-          console.error('Error inserting line items batch:', error);
-        } else {
-          console.log(`✓ Inserted ${batch.length} line items in batch`);
+          if (products) {
+            products.forEach((p: any) => {
+              if (p.sku) {
+                productSkuMap.set(p.sku.trim().toLowerCase(), p.id);
+              }
+            });
+            console.log(`Loaded ${productSkuMap.size} products for SKU matching`);
+          }
+        } catch (productError) {
+          console.error('Exception fetching products');
         }
+
+        // Map and insert line items
+        const lineItemsWithIds = lineItems
+          .map(item => {
+            try {
+              const orderNum = String(item.order_number).trim();
+              const orderId = orderIdMap.get(orderNum) || orderIdMap.get('#' + orderNum);
+              const productId = item.sku ? productSkuMap.get(item.sku.trim().toLowerCase()) : null;
+              
+              return {
+                ...item,
+                order_number: orderNum,
+                order_id: orderId,
+                product_id: productId || null,
+              };
+            } catch (mapError) {
+              return null;
+            }
+          })
+          .filter(item => item && item.order_id);
+
+        console.log(`Line items: ${lineItems.length} total, ${lineItemsWithIds.length} linked`);
+        
+        const linkedToProducts = lineItemsWithIds.filter(li => li.product_id).length;
+        console.log(`Linked to products: ${linkedToProducts}/${lineItemsWithIds.length}`);
+        
+        if (lineItemsWithIds.length < lineItems.length) {
+          console.warn(`⚠️ ${lineItems.length - lineItemsWithIds.length} line items couldn't be linked`);
+        }
+
+        console.log(`Inserting ${lineItemsWithIds.length} line items...`);
+        for (let i = 0; i < lineItemsWithIds.length; i += batchSize) {
+          const batch = lineItemsWithIds.slice(i, i + batchSize);
+          try {
+            const { error } = await supabaseClient
+              .from('order_line_items')
+              .insert(batch);
+
+            if (error) {
+              console.error(`Failed to insert line items:`, error.message);
+              totalLineItemsFailed += batch.length;
+            } else {
+              console.log(`✓ Inserted ${batch.length} line items`);
+              totalLineItemsImported += batch.length;
+            }
+          } catch (itemBatchError) {
+            console.error(`Exception inserting line items`);
+            totalLineItemsFailed += batch.length;
+          }
+        }
+      } catch (csvError) {
+        console.error(`Failed to process CSV ${csvIndex + 1}:`, csvError);
       }
-
-      totalOrdersImported += orders.size;
-      totalLineItemsImported += lineItemsWithIds.length;
-
-      // Clear memory
-      orders.clear();
-      lineItems.length = 0;
-      
-      console.log(`Completed CSV ${csvIndex + 1}/${csvData.length}`);
     }
 
+    console.log('\n=== IMPORT SUMMARY ===');
+    console.log(`Rows processed: ${totalRowsProcessed}`);
+    console.log(`Rows skipped: ${totalRowsSkipped}`);
+    console.log(`Orders imported: ${totalOrdersImported}`);
+    console.log(`Orders failed: ${totalOrdersFailed}`);
+    console.log(`Line items imported: ${totalLineItemsImported}`);
+    console.log(`Line items failed: ${totalLineItemsFailed}`);
+    console.log('=====================\n');
+
     return new Response(
-      JSON.stringify({
-        success: true,
+      JSON.stringify({ 
+        success: true, 
         ordersImported: totalOrdersImported,
         lineItemsImported: totalLineItemsImported,
+        rowsProcessed: totalRowsProcessed,
+        rowsSkipped: totalRowsSkipped,
+        ordersFailed: totalOrdersFailed,
+        lineItemsFailed: totalLineItemsFailed
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -285,7 +338,6 @@ Deno.serve(async (req) => {
   }
 });
 
-// Parse CSV properly handling quoted fields with newlines
 function parseCSV(csv: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -298,31 +350,24 @@ function parseCSV(csv: string): string[][] {
     
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
-        // Escaped quote inside quoted field
         field += '"';
         i++;
       } else if (inQuotes && (nextChar === ',' || nextChar === '\n' || nextChar === '\r' || nextChar === undefined)) {
-        // End of quoted field - only toggle off quotes if followed by delimiter or end
         inQuotes = false;
       } else if (!inQuotes && field.length === 0) {
-        // Start of quoted field - only toggle on if at field start
         inQuotes = true;
       } else {
-        // Quote in middle of unquoted field, keep it
         field += char;
       }
     } else if (char === ',' && !inQuotes) {
-      // End of field
       row.push(field);
       field = '';
     } else if ((char === '\n' || char === '\r') && !inQuotes) {
-      // End of row
       if (char === '\r' && nextChar === '\n') {
-        i++; // Skip \r\n
+        i++;
       }
       row.push(field);
       
-      // Only add row if it has content
       if (row.some(f => f.length > 0)) {
         rows.push(row);
       }
@@ -333,7 +378,6 @@ function parseCSV(csv: string): string[][] {
     }
   }
   
-  // Handle last field and row
   if (field.length > 0 || row.length > 0) {
     row.push(field);
     if (row.some(f => f.length > 0)) {
