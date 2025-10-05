@@ -428,7 +428,7 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
 
           {product && (
             <TabsContent value="inventory" className="space-y-4">
-              {stockLevel && (
+              {stockLevel ? (
                 <>
                   <div className="p-4 bg-muted rounded-lg">
                     <h4 className="font-semibold mb-2 flex items-center gap-2">
@@ -558,6 +558,18 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
                     </TabsContent>
                   </Tabs>
                 </>
+              ) : (
+                <div className="p-8 text-center space-y-4">
+                  <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center">
+                    <Package className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">No Warehouse Stock</h4>
+                    <p className="text-sm text-muted-foreground">
+                      This product hasn't been assigned to a warehouse yet. Go to the Inventory page to add stock.
+                    </p>
+                  </div>
+                </div>
               )}
             </TabsContent>
           )}
