@@ -5,27 +5,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalesTrendCard } from "@/components/dashboard/SalesTrendCard";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 const Dashboard = () => {
 
-  // Today's sales metrics - using local timezone date boundaries
+  // Today's sales metrics - using UTC date boundaries
   const { data: todayStats, isLoading: salesLoading } = useQuery({
     queryKey: ["sales-today"],
     queryFn: async () => {
-      // Get today's date at midnight in user's local timezone
+      // Get UTC start and end of today
       const now = new Date();
-      const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const utcToday = toZonedTime(now, 'UTC');
+      utcToday.setUTCHours(0, 0, 0, 0);
+      const todayStart = fromZonedTime(utcToday, 'UTC');
       
-      // Convert to UTC for database query
-       const todayStart = localToday.toISOString();
-       const todayEnd = localTodayEnd.toISOString();
+      const todayEnd = new Date(todayStart);
+      todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
       
       const { data: orders } = await supabase
         .from("orders")
         .select("*")
-        .gte("placed_at", todayStart)
-        .lt("placed_at", todayEnd);
+        .gte("placed_at", todayStart.toISOString())
+        .lt("placed_at", todayEnd.toISOString());
 
       const totalRevenue = orders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const productRevenue = orders?.reduce((sum, o) => sum + Number(o.product_revenue), 0) || 0;
@@ -33,15 +34,15 @@ const Dashboard = () => {
       const orderCount = orders?.length || 0;
       const avgOrderValue = orderCount > 0 ? totalRevenue / orderCount : 0;
 
-      // Get yesterday's date
-      const localYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      const yesterdayStart = localYesterday.toISOString();
+      // Get UTC yesterday
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
       
       const { data: yesterdayOrders } = await supabase
         .from("orders")
         .select("total_amount")
-        .gte("placed_at", yesterdayStart)
-        .lt("placed_at", todayStart);
+        .gte("placed_at", yesterdayStart.toISOString())
+        .lt("placed_at", todayStart.toISOString());
 
       const yesterdayRevenue = yesterdayOrders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
       const revenueChange = yesterdayRevenue > 0 
@@ -64,19 +65,21 @@ const Dashboard = () => {
   const { data: topProducts } = useQuery({
     queryKey: ["top-products-today"],
     queryFn: async () => {
-      // Use same date calculation as todayStats for consistency
+      // Get UTC start and end of today
       const now = new Date();
-      const localToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const localTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-        const todayStart = localToday.toISOString();
-        const todayEnd = localTodayEnd.toISOString();
+      const utcToday = toZonedTime(now, 'UTC');
+      utcToday.setUTCHours(0, 0, 0, 0);
+      const todayStart = fromZonedTime(utcToday, 'UTC');
+      
+      const todayEnd = new Date(todayStart);
+      todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
       
       // First get order IDs from today based on placed_at
       const { data: todayOrders } = await supabase
         .from("orders")
         .select("id")
-        .gte("placed_at", todayStart)
-        .lt("placed_at", todayEnd);
+        .gte("placed_at", todayStart.toISOString())
+        .lt("placed_at", todayEnd.toISOString());
 
       const orderIds = todayOrders?.map(o => o.id) || [];
 

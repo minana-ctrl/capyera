@@ -4,6 +4,7 @@ import { Calendar } from "./ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { format, subDays } from "date-fns";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
 
 interface DateRangeFilterProps {
@@ -11,9 +12,21 @@ interface DateRangeFilterProps {
 }
 
 export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
+  const getUTCStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, 'UTC');
+    zonedDate.setUTCHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, 'UTC');
+  };
+
+  const getUTCEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, 'UTC');
+    zonedDate.setUTCHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, 'UTC');
+  };
+
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
-    from: subDays(new Date(), 30),
-    to: new Date(),
+    from: getUTCStartOfDay(subDays(new Date(), 30)),
+    to: getUTCEndOfDay(new Date()),
   });
 
   const presets = [
@@ -27,23 +40,25 @@ export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
   const handlePresetClick = (days: number) => {
     const now = new Date();
     if (days === 0) {
-      // Today
-      const from = now;
-      const to = now;
+      // Today (UTC)
+      const from = getUTCStartOfDay(now);
+      const to = getUTCEndOfDay(now);
       setDateRange({ from, to });
       onDateChange(from, to);
       return;
     }
     if (days === 1) {
-      // Yesterday (single day)
-      const y = subDays(now, 1);
-      setDateRange({ from: y, to: y });
-      onDateChange(y, y);
+      // Yesterday (single day, UTC)
+      const yesterday = subDays(now, 1);
+      const from = getUTCStartOfDay(yesterday);
+      const to = getUTCEndOfDay(yesterday);
+      setDateRange({ from, to });
+      onDateChange(from, to);
       return;
     }
-    // Last N days = today and previous (N-1) days
-    const to = now;
-    const from = subDays(to, days - 1);
+    // Last N days = today and previous (N-1) days (UTC)
+    const to = getUTCEndOfDay(now);
+    const from = getUTCStartOfDay(subDays(now, days - 1));
     setDateRange({ from, to });
     onDateChange(from, to);
   };
@@ -91,9 +106,9 @@ export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
             selected={dateRange}
             onSelect={(range: any) => {
               if (!range) return;
-              const from = range.from;
-              const to = range.to || range.from;
-              if (from) {
+              const from = range.from ? getUTCStartOfDay(range.from) : null;
+              const to = range.to ? getUTCEndOfDay(range.to) : (from ? getUTCEndOfDay(range.from) : null);
+              if (from && to) {
                 const updated = { from, to };
                 setDateRange(updated);
                 onDateChange(from, to);

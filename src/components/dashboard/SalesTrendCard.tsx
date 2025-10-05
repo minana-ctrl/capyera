@@ -8,11 +8,24 @@ import { DateRangePresets } from "./DateRangePresets";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { useSalesTrend } from "@/hooks/useSalesTrend";
 import { subDays } from "date-fns";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 export const SalesTrendCard = () => {
+  const getUTCStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, 'UTC');
+    zonedDate.setUTCHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, 'UTC');
+  };
+
+  const getUTCEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, 'UTC');
+    zonedDate.setUTCHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, 'UTC');
+  };
+
   const [dateRange, setDateRange] = useState({
-    from: subDays(new Date(), 29),
-    to: new Date(),
+    from: getUTCStartOfDay(subDays(new Date(), 29)),
+    to: getUTCEndOfDay(new Date()),
   });
   const [chartMetric, setChartMetric] = useState<'revenue' | 'units'>('revenue');
 

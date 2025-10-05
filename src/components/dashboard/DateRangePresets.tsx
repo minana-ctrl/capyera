@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { subDays, startOfDay, endOfDay } from "date-fns";
+import { subDays } from "date-fns";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 interface DateRangePresetsProps {
   onRangeSelect: (from: Date, to: Date) => void;
@@ -8,48 +9,62 @@ interface DateRangePresetsProps {
 }
 
 export const DateRangePresets = ({ onRangeSelect, currentFrom, currentTo }: DateRangePresetsProps) => {
+  const UTC = 'UTC';
+  
+  const getUTCStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, UTC);
+    zonedDate.setUTCHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, UTC);
+  };
+
+  const getUTCEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, UTC);
+    zonedDate.setUTCHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, UTC);
+  };
+
   const presets = [
     {
       label: "Today",
       getValue: () => ({
-        from: startOfDay(new Date()),
-        to: endOfDay(new Date()),
+        from: getUTCStartOfDay(new Date()),
+        to: getUTCEndOfDay(new Date()),
       }),
     },
     {
       label: "Yesterday",
       getValue: () => ({
-        from: startOfDay(subDays(new Date(), 1)),
-        to: endOfDay(subDays(new Date(), 1)),
+        from: getUTCStartOfDay(subDays(new Date(), 1)),
+        to: getUTCEndOfDay(subDays(new Date(), 1)),
       }),
     },
     {
       label: "Last 7 Days",
       getValue: () => ({
-        from: startOfDay(subDays(new Date(), 6)),
-        to: endOfDay(new Date()),
+        from: getUTCStartOfDay(subDays(new Date(), 6)),
+        to: getUTCEndOfDay(new Date()),
       }),
     },
     {
       label: "Last 14 Days",
       getValue: () => ({
-        from: startOfDay(subDays(new Date(), 13)),
-        to: endOfDay(new Date()),
+        from: getUTCStartOfDay(subDays(new Date(), 13)),
+        to: getUTCEndOfDay(new Date()),
       }),
     },
     {
       label: "Last 30 Days",
       getValue: () => ({
-        from: startOfDay(subDays(new Date(), 29)),
-        to: endOfDay(new Date()),
+        from: getUTCStartOfDay(subDays(new Date(), 29)),
+        to: getUTCEndOfDay(new Date()),
       }),
     },
   ];
 
   const isActive = (from: Date, to: Date) => {
     return (
-      startOfDay(from).getTime() === startOfDay(currentFrom).getTime() &&
-      startOfDay(to).getTime() === startOfDay(currentTo).getTime()
+      getUTCStartOfDay(from).getTime() === getUTCStartOfDay(currentFrom).getTime() &&
+      getUTCStartOfDay(to).getTime() === getUTCStartOfDay(currentTo).getTime()
     );
   };
 

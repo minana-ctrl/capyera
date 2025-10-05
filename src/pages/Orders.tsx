@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Loader2, Webhook } from "lucide-react";
 import { toast } from "sonner";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, subDays } from "date-fns";
+import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 
 export default function Orders() {
@@ -30,10 +31,14 @@ export default function Orders() {
   const { data: orders, isLoading, refetch } = useQuery({
     queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
-      const fromStart = startOfDay(dateRange.from);
-      const toEnd = endOfDay(dateRange.to);
-      const fromISO = new Date(fromStart.getTime() - fromStart.getTimezoneOffset() * 60000).toISOString();
-      const toISO = new Date(toEnd.getTime() - toEnd.getTimezoneOffset() * 60000).toISOString();
+      // Use UTC for date range filtering
+      const utcFrom = toZonedTime(dateRange.from, 'UTC');
+      utcFrom.setUTCHours(0, 0, 0, 0);
+      const fromISO = fromZonedTime(utcFrom, 'UTC').toISOString();
+      
+      const utcTo = toZonedTime(dateRange.to, 'UTC');
+      utcTo.setUTCHours(23, 59, 59, 999);
+      const toISO = fromZonedTime(utcTo, 'UTC').toISOString();
 
       const { data, error } = await supabase
         .from("orders")
@@ -410,7 +415,7 @@ export default function Orders() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {format(new Date(order.placed_at), "MMM d, yyyy")}
+                        {formatInTimeZone(new Date(order.placed_at), "UTC", "MMM d, yyyy")}
                       </TableCell>
                       <TableCell>
                         {order.currency} {Number(order.total_amount).toFixed(2)}
