@@ -96,6 +96,9 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
 
   // Ensure id types
   const shopifyId = shopifyOrder.id.toString();
+  
+  // Extract order number without prefix (e.g., "CPY74271" -> "74271")
+  const orderNumber = (shopifyOrder.order_number?.toString() || shopifyOrder.name || '').replace(/^[A-Z]+/, '');
 
   // Try to find existing order first (Shopify retries are common)
   const { data: existingOrder } = await supabase
@@ -111,7 +114,7 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
       .from('orders')
       .insert({
         shopify_order_id: shopifyId,
-        order_number: shopifyOrder.order_number?.toString() || shopifyOrder.name,
+        order_number: orderNumber,
         status: shopifyOrder.financial_status || 'pending',
         fulfillment_status: shopifyOrder.fulfillment_status || 'unfulfilled',
         customer_name: shopifyOrder.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Guest',
