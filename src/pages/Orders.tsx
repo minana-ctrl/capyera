@@ -31,21 +31,23 @@ export default function Orders() {
   const { data: orders, isLoading, refetch } = useQuery({
     queryKey: ["orders", dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: async () => {
-      const getUTCStartOfDay = (date: Date) => {
-        const d = new Date(date);
-        d.setUTCHours(0, 0, 0, 0);
-        return d;
+      const PACIFIC_TZ = 'America/Los_Angeles';
+      
+      const getPacificStartOfDay = (date: Date) => {
+        const zonedDate = toZonedTime(date, PACIFIC_TZ);
+        zonedDate.setHours(0, 0, 0, 0);
+        return fromZonedTime(zonedDate, PACIFIC_TZ);
       };
 
-      const getUTCEndOfDay = (date: Date) => {
-        const d = new Date(date);
-        d.setUTCHours(23, 59, 59, 999);
-        return d;
+      const getPacificEndOfDay = (date: Date) => {
+        const zonedDate = toZonedTime(date, PACIFIC_TZ);
+        zonedDate.setHours(23, 59, 59, 999);
+        return fromZonedTime(zonedDate, PACIFIC_TZ);
       };
 
-      // Use UTC for date range filtering
-      const fromISO = getUTCStartOfDay(dateRange.from).toISOString();
-      const toISO = getUTCEndOfDay(dateRange.to).toISOString();
+      // Use Pacific time for date range filtering
+      const fromISO = getPacificStartOfDay(dateRange.from).toISOString();
+      const toISO = getPacificEndOfDay(dateRange.to).toISOString();
 
       const { data, error } = await supabase
         .from("orders")

@@ -9,62 +9,62 @@ interface DateRangePresetsProps {
 }
 
 export const DateRangePresets = ({ onRangeSelect, currentFrom, currentTo }: DateRangePresetsProps) => {
-  const UTC = 'UTC';
+  const PACIFIC_TZ = 'America/Los_Angeles';
   
-  const getUTCStartOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
+  const getPacificStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, PACIFIC_TZ);
+    zonedDate.setHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, PACIFIC_TZ);
   };
 
-  const getUTCEndOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setUTCHours(23, 59, 59, 999);
-    return d;
+  const getPacificEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, PACIFIC_TZ);
+    zonedDate.setHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, PACIFIC_TZ);
   };
 
   const presets = [
     {
       label: "Today",
       getValue: () => ({
-        from: getUTCStartOfDay(new Date()),
-        to: getUTCEndOfDay(new Date()),
+        from: getPacificStartOfDay(new Date()),
+        to: getPacificEndOfDay(new Date()),
       }),
     },
     {
       label: "Yesterday",
       getValue: () => ({
-        from: getUTCStartOfDay(subDays(new Date(), 1)),
-        to: getUTCEndOfDay(subDays(new Date(), 1)),
+        from: getPacificStartOfDay(subDays(new Date(), 1)),
+        to: getPacificEndOfDay(subDays(new Date(), 1)),
       }),
     },
     {
       label: "Last 7 Days",
       getValue: () => ({
-        from: getUTCStartOfDay(subDays(new Date(), 6)),
-        to: getUTCEndOfDay(new Date()),
+        from: getPacificStartOfDay(subDays(new Date(), 6)),
+        to: getPacificEndOfDay(new Date()),
       }),
     },
     {
       label: "Last 14 Days",
       getValue: () => ({
-        from: getUTCStartOfDay(subDays(new Date(), 13)),
-        to: getUTCEndOfDay(new Date()),
+        from: getPacificStartOfDay(subDays(new Date(), 13)),
+        to: getPacificEndOfDay(new Date()),
       }),
     },
     {
       label: "Last 30 Days",
       getValue: () => ({
-        from: getUTCStartOfDay(subDays(new Date(), 29)),
-        to: getUTCEndOfDay(new Date()),
+        from: getPacificStartOfDay(subDays(new Date(), 29)),
+        to: getPacificEndOfDay(new Date()),
       }),
     },
   ];
 
   const isActive = (from: Date, to: Date) => {
     return (
-      getUTCStartOfDay(from).getTime() === getUTCStartOfDay(currentFrom).getTime() &&
-      getUTCStartOfDay(to).getTime() === getUTCStartOfDay(currentTo).getTime()
+      getPacificStartOfDay(from).getTime() === getPacificStartOfDay(currentFrom).getTime() &&
+      getPacificStartOfDay(to).getTime() === getPacificStartOfDay(currentTo).getTime()
     );
   };
 

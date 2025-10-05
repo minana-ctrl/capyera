@@ -11,21 +11,23 @@ import { DateRangeFilter } from "@/components/DateRangeFilter";
 
 const Dashboard = () => {
 
-  const getUTCStartOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
+  const PACIFIC_TZ = 'America/Los_Angeles';
+  
+  const getPacificStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, PACIFIC_TZ);
+    zonedDate.setHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, PACIFIC_TZ);
   };
 
-  const getUTCEndOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setUTCHours(23, 59, 59, 999);
-    return d;
+  const getPacificEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, PACIFIC_TZ);
+    zonedDate.setHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, PACIFIC_TZ);
   };
 
   const [metricsDateRange, setMetricsDateRange] = useState({
-    from: getUTCStartOfDay(new Date()),
-    to: getUTCEndOfDay(new Date()),
+    from: getPacificStartOfDay(new Date()),
+    to: getPacificEndOfDay(new Date()),
   });
 
   // Sales metrics with date range filtering

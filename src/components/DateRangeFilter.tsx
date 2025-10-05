@@ -12,21 +12,23 @@ interface DateRangeFilterProps {
 }
 
 export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
-  const getUTCStartOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
+  const PACIFIC_TZ = 'America/Los_Angeles';
+  
+  const getPacificStartOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, PACIFIC_TZ);
+    zonedDate.setHours(0, 0, 0, 0);
+    return fromZonedTime(zonedDate, PACIFIC_TZ);
   };
 
-  const getUTCEndOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setUTCHours(23, 59, 59, 999);
-    return d;
+  const getPacificEndOfDay = (date: Date) => {
+    const zonedDate = toZonedTime(date, PACIFIC_TZ);
+    zonedDate.setHours(23, 59, 59, 999);
+    return fromZonedTime(zonedDate, PACIFIC_TZ);
   };
 
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
-    from: getUTCStartOfDay(subDays(new Date(), 30)),
-    to: getUTCEndOfDay(new Date()),
+    from: getPacificStartOfDay(subDays(new Date(), 30)),
+    to: getPacificEndOfDay(new Date()),
   });
 
   const presets = [
@@ -40,25 +42,25 @@ export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
   const handlePresetClick = (days: number) => {
     const now = new Date();
     if (days === 0) {
-      // Today (UTC)
-      const from = getUTCStartOfDay(now);
-      const to = getUTCEndOfDay(now);
+      // Today (Pacific)
+      const from = getPacificStartOfDay(now);
+      const to = getPacificEndOfDay(now);
       setDateRange({ from, to });
       onDateChange(from, to);
       return;
     }
     if (days === 1) {
-      // Yesterday (single day, UTC)
+      // Yesterday (single day, Pacific)
       const yesterday = subDays(now, 1);
-      const from = getUTCStartOfDay(yesterday);
-      const to = getUTCEndOfDay(yesterday);
+      const from = getPacificStartOfDay(yesterday);
+      const to = getPacificEndOfDay(yesterday);
       setDateRange({ from, to });
       onDateChange(from, to);
       return;
     }
-    // Last N days = today and previous (N-1) days (UTC)
-    const to = getUTCEndOfDay(now);
-    const from = getUTCStartOfDay(subDays(now, days - 1));
+    // Last N days = today and previous (N-1) days (Pacific)
+    const to = getPacificEndOfDay(now);
+    const from = getPacificStartOfDay(subDays(now, days - 1));
     setDateRange({ from, to });
     onDateChange(from, to);
   };
@@ -106,8 +108,8 @@ export function DateRangeFilter({ onDateChange }: DateRangeFilterProps) {
             selected={dateRange}
             onSelect={(range: any) => {
               if (!range) return;
-              const from = range.from ? getUTCStartOfDay(range.from) : null;
-              const to = range.to ? getUTCEndOfDay(range.to) : (from ? getUTCEndOfDay(range.from) : null);
+              const from = range.from ? getPacificStartOfDay(range.from) : null;
+              const to = range.to ? getPacificEndOfDay(range.to) : (from ? getPacificEndOfDay(range.from) : null);
               if (from && to) {
                 const updated = { from, to };
                 setDateRange(updated);
