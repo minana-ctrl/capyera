@@ -16,6 +16,7 @@ interface ImportOrdersDialogProps {
 export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrdersDialogProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
   const { toast } = useToast();
 
   const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,6 +36,7 @@ export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrde
     }
 
     setIsLoading(true);
+    setIsCancelled(false);
 
     try {
       let totalOrdersImported = 0;
@@ -50,8 +52,26 @@ export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrde
         body: { csvData: [], clearData: true }
       });
 
+      // Check for cancellation
+      if (isCancelled) {
+        toast({
+          title: "Import cancelled",
+          description: "Data was cleared but no files were imported",
+        });
+        return;
+      }
+
       // Process files one at a time
       for (let i = 0; i < files.length; i++) {
+        // Check for cancellation before processing each file
+        if (isCancelled) {
+          toast({
+            title: "Import cancelled",
+            description: `Imported ${totalOrdersImported} orders from ${i} of ${files.length} files before cancellation`,
+          });
+          return;
+        }
+
         const file = files[i];
         
         toast({
@@ -88,7 +108,16 @@ export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrde
       });
     } finally {
       setIsLoading(false);
+      setIsCancelled(false);
     }
+  };
+
+  const handleCancel = () => {
+    setIsCancelled(true);
+    toast({
+      title: "Cancelling import...",
+      description: "Current file will finish, then import will stop",
+    });
   };
 
   return (
@@ -121,22 +150,21 @@ export const ImportOrdersDialog = ({ open, onOpenChange, onSuccess }: ImportOrde
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
-            Cancel
-          </Button>
-          <Button onClick={handleImport} disabled={isLoading || files.length === 0}>
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Importing...
-              </>
-            ) : (
-              <>
+          {isLoading ? (
+            <Button variant="destructive" onClick={handleCancel} disabled={isCancelled}>
+              {isCancelled ? "Stopping..." : "Stop Import"}
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleImport} disabled={files.length === 0}>
                 <Upload className="mr-2 h-4 w-4" />
                 Import Orders
-              </>
-            )}
-          </Button>
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
