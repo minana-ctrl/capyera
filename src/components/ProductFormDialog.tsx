@@ -248,7 +248,6 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
         .from("warehouse_stock")
         .update({
           quantity: newQuantity,
-          available_stock: newQuantity - (stockLevel.reserved_stock || 0),
           updated_at: new Date().toISOString(),
         })
         .eq("product_id", product.id);

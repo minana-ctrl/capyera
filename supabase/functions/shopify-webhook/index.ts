@@ -124,6 +124,11 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
   // Insert line items and reserve inventory
   for (const item of shopifyOrder.line_items || []) {
     const sku = item.sku || item.variant_id?.toString();
+    
+    if (!sku) {
+      console.warn(`Skipping line item without SKU for order ${shopifyOrder.name}`);
+      continue;
+    }
 
     // Find product by SKU for product_id reference
     const { data: product } = await supabase
@@ -137,11 +142,11 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
     const actualTotalPrice = actualUnitPrice * item.quantity;
 
     // Insert line item with actual sold prices
-    await supabase
+    const { error: lineItemError } = await supabase
       .from('order_line_items')
       .insert({
         order_id: insertedOrder.id,
-        sku: sku || 'UNKNOWN',
+        sku: sku,
         product_name: item.name,
         quantity: item.quantity,
         unit_price: actualUnitPrice,
@@ -149,6 +154,11 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
         product_id: product?.id || null,
         bundle_id: null,
       });
+
+    if (lineItemError) {
+      console.error(`Failed to insert line item for SKU ${sku}:`, lineItemError);
+      throw lineItemError; // Stop processing if line items fail
+    }
 
     // Reserve inventory if product exists
     if (product) {
@@ -162,6 +172,8 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
       } else {
         console.log(`Reserved ${item.quantity} units of ${sku}`);
       }
+    } else {
+      console.warn(`Product not found for SKU: ${sku}`);
     }
   }
 }
