@@ -64,14 +64,19 @@ Deno.serve(async (req) => {
       const orders = new Map<string, any>();
       const lineItems: any[] = [];
       
-      const lines = csv.split('\n');
-      const headers = lines[0].split(',').map((h: string) => h.trim());
+      // Parse CSV properly handling multiline quoted fields
+      const rows = parseCSV(csv);
+      if (rows.length === 0) continue;
       
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        
-        const values = parseCSVLine(lines[i]);
-        if (values.length !== headers.length) continue;
+      const headers = rows[0];
+      console.log(`Found ${headers.length} columns, ${rows.length - 1} rows`);
+      
+      for (let i = 1; i < rows.length; i++) {
+        const values = rows[i];
+        if (values.length !== headers.length) {
+          console.warn(`Row ${i} has ${values.length} columns, expected ${headers.length}`);
+          continue;
+        }
         
         const row: any = {};
         headers.forEach((header: string, idx: number) => {
@@ -79,9 +84,10 @@ Deno.serve(async (req) => {
         });
 
         const orderNumber = row['Name'];
-        if (!orderNumber) continue;
+        if (!orderNumber || !orderNumber.trim()) continue;
 
-        if (!orders.has(orderNumber)) {
+        // Only capture order data from first row (has Financial Status populated)
+        if (!orders.has(orderNumber) && row['Financial Status']) {
           const placedAt = row['Created at'] ? new Date(row['Created at']).toISOString() : new Date().toISOString();
           const fulfilledAt = row['Fulfilled at'] && row['Fulfilled at'].trim() 
             ? new Date(row['Fulfilled at']).toISOString() 
@@ -103,10 +109,11 @@ Deno.serve(async (req) => {
             country_code: row['Billing Country'] || null,
           };
           
-          console.log(`Order ${orderNumber}: shopify_id=${orderData.shopify_order_id}, country=${orderData.country_code}, fulfilled_at=${orderData.fulfilled_at}`);
+          console.log(`Order ${orderNumber}: shopify_id=${orderData.shopify_order_id}, country=${orderData.country_code}, fulfilled=${orderData.fulfilled_at}`);
           orders.set(orderNumber, orderData);
         }
 
+        // Capture line items from all rows
         if (row['Lineitem name'] && row['Lineitem name'].trim()) {
           lineItems.push({
             order_number: orderNumber.replace('#', ''),
@@ -199,29 +206,53 @@ Deno.serve(async (req) => {
   }
 });
 
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
+// Parse CSV properly handling quoted fields with newlines
+function parseCSV(csv: string): string[][] {
+  const rows: string[][] = [];
+  const row: string[] = [];
+  let field = '';
   let inQuotes = false;
   
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+  for (let i = 0; i < csv.length; i++) {
+    const char = csv[i];
+    const nextChar = csv[i + 1];
     
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote
+        field += '"';
         i++;
       } else {
+        // Toggle quote state
         inQuotes = !inQuotes;
       }
     } else if (char === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
+      // End of field
+      row.push(field.trim());
+      field = '';
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      // End of row
+      if (char === '\r' && nextChar === '\n') {
+        i++; // Skip \r\n
+      }
+      row.push(field.trim());
+      if (row.some(f => f.length > 0)) {
+        rows.push([...row]);
+      }
+      row.length = 0;
+      field = '';
     } else {
-      current += char;
+      field += char;
     }
   }
   
-  result.push(current.trim());
-  return result;
+  // Handle last field and row
+  if (field || row.length > 0) {
+    row.push(field.trim());
+    if (row.some(f => f.length > 0)) {
+      rows.push(row);
+    }
+  }
+  
+  return rows;
 }
