@@ -94,31 +94,63 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
   const customerOrders = shopifyOrder.customer?.orders_count || 0;
   const isNewCustomer = customerOrders === 1;
 
-  // Insert order
-  const { data: insertedOrder, error: orderError } = await supabase
-    .from('orders')
-    .insert({
-      shopify_order_id: shopifyOrder.id.toString(),
-      order_number: shopifyOrder.order_number?.toString() || shopifyOrder.name,
-      status: shopifyOrder.financial_status || 'pending',
-      fulfillment_status: shopifyOrder.fulfillment_status || 'unfulfilled',
-      customer_name: shopifyOrder.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Guest',
-      customer_email: shopifyOrder.customer?.email || shopifyOrder.email,
-      total_amount: parseFloat(shopifyOrder.total_price || '0'),
-      product_revenue: parseFloat(shopifyOrder.subtotal_price || '0'),
-      shipping_cost: parseFloat(shopifyOrder.total_shipping_price_set?.shop_money?.amount || '0'),
-      currency: shopifyOrder.currency || 'USD',
-      placed_at: new Date(shopifyOrder.created_at),
-      is_new_customer: isNewCustomer,
-      shipping_address: shopifyOrder.shipping_address || {},
-      country_code: shopifyOrder.shipping_address?.country_code || null,
-    })
-    .select()
-    .single();
+  // Ensure id types
+  const shopifyId = shopifyOrder.id.toString();
 
-  if (orderError) {
-    console.error('Error inserting order:', orderError);
-    throw orderError;
+  // Try to find existing order first (Shopify retries are common)
+  const { data: existingOrder } = await supabase
+    .from('orders')
+    .select('id, order_number')
+    .eq('shopify_order_id', shopifyId)
+    .maybeSingle();
+
+  let insertedOrder: any = existingOrder || null;
+
+  if (!insertedOrder) {
+    const { data: newOrder, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        shopify_order_id: shopifyId,
+        order_number: shopifyOrder.order_number?.toString() || shopifyOrder.name,
+        status: shopifyOrder.financial_status || 'pending',
+        fulfillment_status: shopifyOrder.fulfillment_status || 'unfulfilled',
+        customer_name: shopifyOrder.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Guest',
+        customer_email: shopifyOrder.customer?.email || shopifyOrder.email,
+        total_amount: parseFloat(shopifyOrder.total_price || '0'),
+        product_revenue: parseFloat(shopifyOrder.subtotal_price || '0'),
+        shipping_cost: parseFloat(shopifyOrder.total_shipping_price_set?.shop_money?.amount || '0'),
+        currency: shopifyOrder.currency || 'USD',
+        placed_at: new Date(shopifyOrder.created_at),
+        is_new_customer: isNewCustomer,
+        shipping_address: shopifyOrder.shipping_address || {},
+        country_code: shopifyOrder.shipping_address?.country_code || null,
+      })
+      .select()
+      .single();
+
+    if (orderError) {
+      // If duplicate order_number happens, fetch existing by shopify_order_id
+      if ((orderError as any).code === '23505') {
+        console.warn('Duplicate order_number detected, fetching existing by shopify_order_id');
+        const { data: fetched } = await supabase
+          .from('orders')
+          .select('id, order_number')
+          .eq('shopify_order_id', shopifyId)
+          .maybeSingle();
+        if (!fetched) {
+          console.error('Duplicate on order_number but no existing order by shopify_order_id');
+          throw orderError;
+        }
+        insertedOrder = fetched;
+      } else {
+        console.error('Error inserting order:', orderError);
+        throw orderError;
+      }
+    } else {
+      insertedOrder = newOrder;
+    }
+  } else {
+    console.log(`Order already exists (${insertedOrder.order_number}), skipping insert`);
   }
 
   // Insert line items and reserve inventory
