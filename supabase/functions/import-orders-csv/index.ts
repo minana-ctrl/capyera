@@ -83,22 +83,28 @@ Deno.serve(async (req) => {
 
         if (!orders.has(orderNumber)) {
           const placedAt = row['Created at'] ? new Date(row['Created at']).toISOString() : new Date().toISOString();
+          const fulfilledAt = row['Fulfilled at'] && row['Fulfilled at'].trim() 
+            ? new Date(row['Fulfilled at']).toISOString() 
+            : null;
           
-          orders.set(orderNumber, {
+          const orderData = {
             order_number: orderNumber.replace('#', ''),
-            shopify_order_id: row['Id'] || null,
+            shopify_order_id: row['Id']?.toString() || null,
             customer_email: row['Email'] || null,
             customer_name: row['Billing Name'] || row['Shipping Name'] || null,
             status: row['Financial Status']?.toLowerCase() === 'paid' ? 'completed' : 'pending',
             fulfillment_status: row['Fulfillment Status']?.toLowerCase() || 'unfulfilled',
             placed_at: placedAt,
-            fulfilled_at: row['Fulfilled at'] ? new Date(row['Fulfilled at']).toISOString() : null,
+            fulfilled_at: fulfilledAt,
             total_amount: parseFloat(row['Total']) || 0,
             product_revenue: parseFloat(row['Subtotal']) || 0,
             shipping_cost: parseFloat(row['Shipping']) || 0,
             currency: row['Currency'] || 'USD',
             country_code: row['Billing Country'] || null,
-          });
+          };
+          
+          console.log(`Order ${orderNumber}: shopify_id=${orderData.shopify_order_id}, country=${orderData.country_code}, fulfilled_at=${orderData.fulfilled_at}`);
+          orders.set(orderNumber, orderData);
         }
 
         if (row['Lineitem name'] && row['Lineitem name'].trim()) {
