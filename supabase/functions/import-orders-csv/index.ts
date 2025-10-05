@@ -197,14 +197,34 @@ Deno.serve(async (req) => {
         for (let i = 0; i < orderArray.length; i += batchSize) {
           const batch = orderArray.slice(i, i + batchSize);
           try {
+            // Try upserting by order_number, which should handle most duplicates
             const { data: insertedOrders, error } = await supabaseClient
               .from('orders')
-              .upsert(batch, { onConflict: 'order_number' })
+              .upsert(batch, { 
+                onConflict: 'order_number',
+                ignoreDuplicates: false 
+              })
               .select('id, order_number');
 
             if (error) {
-              console.error(`Failed to insert orders batch:`, error.message);
-              totalOrdersFailed += batch.length;
+              // If there's still an error (e.g., duplicate shopify_order_id), try inserting one by one
+              console.warn(`Batch upsert failed: ${error.message}, trying individually...`);
+              let successCount = 0;
+              for (const order of batch) {
+                try {
+                  const { error: singleError } = await supabaseClient
+                    .from('orders')
+                    .upsert([order], { onConflict: 'order_number' });
+                  
+                  if (!singleError) {
+                    successCount++;
+                  }
+                } catch (singleErr) {
+                  // Silent fail for individual order
+                }
+              }
+              totalOrdersImported += successCount;
+              totalOrdersFailed += (batch.length - successCount);
             } else {
               console.log(`✓ Inserted ${batch.length} orders in batch`);
               totalOrdersImported += insertedOrders?.length || 0;
@@ -261,9 +281,11 @@ Deno.serve(async (req) => {
               const orderId = orderIdMap.get(orderNum) || orderIdMap.get('#' + orderNum);
               const productId = item.sku ? productSkuMap.get(item.sku.trim().toLowerCase()) : null;
               
+              // Remove order_number - it doesn't exist in the table schema
+              const { order_number, ...itemWithoutOrderNumber } = item;
+              
               return {
-                ...item,
-                order_number: orderNum,
+                ...itemWithoutOrderNumber,
                 order_id: orderId,
                 product_id: productId || null,
               };
