@@ -216,9 +216,7 @@ export default function Orders() {
     toast.info("Clearing all orders...");
 
     try {
-      const { data, error } = await supabase.functions.invoke("import-orders-csv", {
-        body: { clearData: true, csvData: [] }
-      });
+      const { error } = await supabase.functions.invoke("clear-orders");
 
       if (error) throw error;
 
