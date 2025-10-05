@@ -115,14 +115,16 @@ Deno.serve(async (req) => {
 
         // Capture line items from all rows
         if (row['Lineitem name'] && row['Lineitem name'].trim()) {
+          const cleanOrderNum = orderNumber.replace('#', '').trim();
           lineItems.push({
-            order_number: orderNumber.replace('#', ''),
+            order_number: cleanOrderNum,
             product_name: row['Lineitem name'],
             sku: row['Lineitem sku'] || '',
             quantity: parseInt(row['Lineitem quantity']) || 1,
             unit_price: parseFloat(row['Lineitem price']) || 0,
             total_price: parseFloat(row['Lineitem price']) * (parseInt(row['Lineitem quantity']) || 1),
           });
+          console.log(`Line item added: order=${cleanOrderNum}, product=${row['Lineitem name']}, qty=${row['Lineitem quantity']}`);
         }
       }
 
@@ -186,6 +188,12 @@ Deno.serve(async (req) => {
         .filter(item => item.order_id);
 
       console.log(`Line items built: ${lineItems.length}, linked to orders: ${lineItemsWithIds.length}`);
+      
+      if (lineItemsWithIds.length < lineItems.length) {
+        console.warn(`⚠️ ${lineItems.length - lineItemsWithIds.length} line items couldn't be linked to orders`);
+        console.log('Sample unlinked line item order_numbers:', lineItems.slice(0, 5).map(li => li.order_number));
+        console.log('Sample orderIdMap keys:', Array.from(orderIdMap.keys()).slice(0, 5));
+      }
 
       console.log(`Inserting ${lineItemsWithIds.length} line items from CSV ${csvIndex + 1}...`);
       
