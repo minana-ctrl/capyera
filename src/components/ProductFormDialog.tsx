@@ -5,6 +5,7 @@ import * as z from "zod";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -288,6 +289,9 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
+          <DialogDescription>
+            {product ? "Update product details or adjust inventory levels" : "Add a new product to your inventory"}
+          </DialogDescription>
         </DialogHeader>
         
         <Tabs defaultValue="details" className="w-full">
