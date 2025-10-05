@@ -15,7 +15,6 @@ import { ImportOrdersDialog } from "@/components/ImportOrdersDialog";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
-  const [isNormalImporting, setIsNormalImporting] = useState(false);
   const [isSettingUpWebhooks, setIsSettingUpWebhooks] = useState(false);
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -83,38 +82,6 @@ export default function Orders() {
     },
   });
 
-  const handleNormalImport = async () => {
-    console.log("=== Import button clicked ===");
-    setIsNormalImporting(true);
-    toast.info("Starting order import with pagination...");
-
-    try {
-      console.log("Calling shopify-import-orders edge function...");
-      const { data, error } = await supabase.functions.invoke(
-        "shopify-import-orders",
-        { body: { maxPages: 200 } } // Allow up to 200 pages (50,000 orders)
-      );
-
-      console.log("Edge function response:", { data, error });
-
-      if (error) {
-        console.error("Edge function error:", error);
-        throw error;
-      }
-
-      console.log("Import completed successfully:", data);
-      toast.success(
-        `Import completed! ${data.records_imported} orders imported, ${data.records_failed || 0} failed.`
-      );
-      refetch();
-    } catch (error: any) {
-      console.error("Normal import error:", error);
-      toast.error(`Failed to import orders: ${error?.message || 'Unknown error'}`);
-    } finally {
-      console.log("Import process finished, resetting state");
-      setIsNormalImporting(false);
-    }
-  };
 
   const handleBulkImport = async () => {
     setIsImporting(true);
@@ -314,7 +281,7 @@ export default function Orders() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button onClick={handleClearOrders} disabled={isClearing || isNormalImporting || isImporting} variant="destructive">
+                <Button onClick={handleClearOrders} disabled={isClearing || isImporting} variant="destructive">
                   {isClearing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -328,35 +295,9 @@ export default function Orders() {
                   <Upload className="mr-2 h-4 w-4" />
                   Import CSV
                 </Button>
-                <Button onClick={handleNormalImport} disabled={isNormalImporting || isImporting}>
-                  {isNormalImporting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2 h-4 w-4" />
-                      Import Orders
-                    </>
-                  )}
-                </Button>
               </div>
             </div>
           </CardHeader>
-          {isNormalImporting && (
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Status:</span>
-                  <Badge variant="secondary">Importing</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Fetching orders with rate limiting (750ms between requests)...
-                </p>
-              </div>
-            </CardContent>
-          )}
           {importLogs && importLogs.length > 0 && (
             <CardContent>
               <div className="text-sm space-y-2">
