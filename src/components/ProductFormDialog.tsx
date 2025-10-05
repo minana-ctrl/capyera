@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Image as ImageIcon, Upload, Plus, Minus, Package } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AdjustInventoryDialog } from "./AdjustInventoryDialog";
 
 const productSchema = z.object({
   sku: z.string().min(1, "SKU is required"),
@@ -48,9 +49,7 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
   const queryClient = useQueryClient();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(product?.image_url || null);
-  const [adjustmentQuantity, setAdjustmentQuantity] = useState<string>("");
-  const [adjustmentNotes, setAdjustmentNotes] = useState("");
-  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [adjustInventoryOpen, setAdjustInventoryOpen] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -210,98 +209,17 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
     mutation.mutate(data);
   };
 
-  const handleAdjustment = async (type: 'add' | 'remove' | 'set') => {
-    if (!adjustmentQuantity || isNaN(Number(adjustmentQuantity)) || Number(adjustmentQuantity) < 0) {
-      toast.error("Please enter a valid positive number");
-      return;
-    }
-
-    if (!product?.id || !stockLevel) {
-      toast.error("Cannot adjust inventory: product data not available");
-      return;
-    }
-
-    setIsAdjusting(true);
-    try {
-      const qty = Number(adjustmentQuantity);
-      let newQuantity: number;
-      let movementType: string;
-
-      const currentStock = stockLevel.quantity;
-
-      switch (type) {
-        case 'add':
-          newQuantity = currentStock + qty;
-          movementType = 'inbound';
-          break;
-        case 'remove':
-          newQuantity = Math.max(0, currentStock - qty);
-          movementType = 'adjustment';
-          break;
-        case 'set':
-          newQuantity = qty;
-          movementType = 'adjustment';
-          break;
-      }
-
-      // Update warehouse stock
-      const { error: updateError } = await supabase
-        .from("warehouse_stock")
-        .update({
-          quantity: newQuantity,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("product_id", product.id);
-
-      if (updateError) throw updateError;
-
-      // Log stock movement
-      const { error: logError } = await supabase
-        .from("stock_movements")
-        .insert({
-          product_id: product.id,
-          warehouse_id: stockLevel.warehouse_id,
-          movement_type: movementType,
-          quantity: type === 'remove' ? -qty : (type === 'add' ? qty : (newQuantity - currentStock)),
-          notes: adjustmentNotes || `Manual ${type} adjustment`,
-        });
-
-      if (logError) throw logError;
-
-      toast.success("Inventory adjusted successfully");
-      
-      setAdjustmentQuantity("");
-      setAdjustmentNotes("");
-      
-      // Refresh data
-      queryClient.invalidateQueries({ queryKey: ["warehouse_stock"] });
-      onInventoryUpdate?.();
-    } catch (error: any) {
-      console.error("Error adjusting inventory:", error);
-      toast.error(error.message || "Failed to adjust inventory");
-    } finally {
-      setIsAdjusting(false);
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
-          <DialogDescription>
-            {product ? "Update product details or adjust inventory levels" : "Add a new product to your inventory"}
-          </DialogDescription>
-        </DialogHeader>
-        
-        <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="details">Product Details</TabsTrigger>
-            {product && <TabsTrigger value="inventory">Adjust Inventory</TabsTrigger>}
-          </TabsList>
-
-          <TabsContent value="details">
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
+            <DialogDescription>
+              {product ? "Update product details and manage inventory" : "Add a new product to your inventory"}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2 flex flex-col items-center gap-4">
                   <Avatar className="h-32 w-32 rounded-md">
@@ -415,166 +333,51 @@ export const ProductFormDialog = ({ product, open, onOpenChange, onInventoryUpda
                 </div>
               </div>
 
-              <DialogFooter>
+            <DialogFooter className="flex justify-between items-center">
+              <div className="flex-1">
+                {product && stockLevel && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setAdjustInventoryOpen(true)}
+                    className="gap-2"
+                  >
+                    <Package className="h-4 w-4" />
+                    Adjust Inventory
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={mutation.isPending}>
                   {mutation.isPending ? "Saving..." : product ? "Update Product" : "Create Product"}
                 </Button>
-              </DialogFooter>
-            </form>
-          </TabsContent>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-          {product && (
-            <TabsContent value="inventory" className="space-y-4">
-              {stockLevel ? (
-                <>
-                  <div className="p-4 bg-muted rounded-lg">
-                    <h4 className="font-semibold mb-2 flex items-center gap-2">
-                      <Package className="h-5 w-5" />
-                      {product.name} (SKU: {product.sku})
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      Current stock: <span className="font-semibold">{stockLevel.quantity} units</span>
-                    </p>
-                  </div>
-
-                  <Tabs defaultValue="add" className="w-full">
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="add">
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add
-                      </TabsTrigger>
-                      <TabsTrigger value="remove">
-                        <Minus className="h-4 w-4 mr-1" />
-                        Remove
-                      </TabsTrigger>
-                      <TabsTrigger value="set">
-                        <Package className="h-4 w-4 mr-1" />
-                        Set
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="add" className="space-y-4 mt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="add-quantity">Quantity to Add</Label>
-                        <Input
-                          id="add-quantity"
-                          type="number"
-                          min="0"
-                          placeholder="Enter quantity"
-                          value={adjustmentQuantity}
-                          onChange={(e) => setAdjustmentQuantity(e.target.value)}
-                        />
-                        <p className="text-sm text-muted-foreground">
-                          New total: {stockLevel.quantity + (Number(adjustmentQuantity) || 0)} units
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="add-notes">Notes (optional)</Label>
-                        <Textarea
-                          id="add-notes"
-                          placeholder="Reason for adjustment..."
-                          value={adjustmentNotes}
-                          onChange={(e) => setAdjustmentNotes(e.target.value)}
-                        />
-                      </div>
-                      <Button
-                        onClick={() => handleAdjustment('add')}
-                        disabled={isAdjusting || !adjustmentQuantity}
-                        className="w-full"
-                      >
-                        Add Stock
-                      </Button>
-                    </TabsContent>
-
-                    <TabsContent value="remove" className="space-y-4 mt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="remove-quantity">Quantity to Remove</Label>
-                        <Input
-                          id="remove-quantity"
-                          type="number"
-                          min="0"
-                          max={stockLevel.quantity}
-                          placeholder="Enter quantity"
-                          value={adjustmentQuantity}
-                          onChange={(e) => setAdjustmentQuantity(e.target.value)}
-                        />
-                        <p className="text-sm text-muted-foreground">
-                          New total: {Math.max(0, stockLevel.quantity - (Number(adjustmentQuantity) || 0))} units
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="remove-notes">Notes (optional)</Label>
-                        <Textarea
-                          id="remove-notes"
-                          placeholder="Reason for adjustment..."
-                          value={adjustmentNotes}
-                          onChange={(e) => setAdjustmentNotes(e.target.value)}
-                        />
-                      </div>
-                      <Button
-                        onClick={() => handleAdjustment('remove')}
-                        disabled={isAdjusting || !adjustmentQuantity}
-                        variant="destructive"
-                        className="w-full"
-                      >
-                        Remove Stock
-                      </Button>
-                    </TabsContent>
-
-                    <TabsContent value="set" className="space-y-4 mt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="set-quantity">Set Quantity To</Label>
-                        <Input
-                          id="set-quantity"
-                          type="number"
-                          min="0"
-                          placeholder="Enter new quantity"
-                          value={adjustmentQuantity}
-                          onChange={(e) => setAdjustmentQuantity(e.target.value)}
-                        />
-                        <p className="text-sm text-muted-foreground">
-                          Change: {(Number(adjustmentQuantity) || 0) - stockLevel.quantity > 0 ? '+' : ''}{(Number(adjustmentQuantity) || 0) - stockLevel.quantity} units
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="set-notes">Notes (optional)</Label>
-                        <Textarea
-                          id="set-notes"
-                          placeholder="Reason for adjustment..."
-                          value={adjustmentNotes}
-                          onChange={(e) => setAdjustmentNotes(e.target.value)}
-                        />
-                      </div>
-                      <Button
-                        onClick={() => handleAdjustment('set')}
-                        disabled={isAdjusting || !adjustmentQuantity}
-                        className="w-full"
-                      >
-                        Set Stock Level
-                      </Button>
-                    </TabsContent>
-                  </Tabs>
-                </>
-              ) : (
-                <div className="p-8 text-center space-y-4">
-                  <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center">
-                    <Package className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold mb-1">No Warehouse Stock</h4>
-                    <p className="text-sm text-muted-foreground">
-                      This product hasn't been assigned to a warehouse yet. Go to the Inventory page to add stock.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-          )}
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+      {product && stockLevel && (
+        <AdjustInventoryDialog
+          open={adjustInventoryOpen}
+          onOpenChange={setAdjustInventoryOpen}
+          product={{
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            current_level: stockLevel.quantity,
+            warehouse_id: stockLevel.warehouse_id,
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["warehouse_stock"] });
+            queryClient.invalidateQueries({ queryKey: ["inventory-data"] });
+            onInventoryUpdate?.();
+          }}
+        />
+      )}
+    </>
   );
 };
