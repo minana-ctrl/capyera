@@ -28,35 +28,35 @@ export function AppSidebar() {
   const { open } = useSidebar();
 
   return (
-    <Sidebar className={open ? "w-60" : "w-14"}>
-      <SidebarContent>
-        <div className="p-4 border-b">
-          <h2 className={`font-bold text-lg transition-opacity ${!open && "opacity-0"}`}>
+    <Sidebar className={`${open ? "w-60" : "w-14"} border-r border-border/50 glass backdrop-blur-xl`}>
+      <SidebarContent className="relative">
+        <div className="p-4 border-b border-border/50">
+          <h2 className={`font-bold text-xl gradient-text transition-opacity ${!open && "opacity-0"}`}>
             Capyera
           </h2>
         </div>
         
-        <SidebarGroup>
-          <SidebarGroupLabel className={!open ? "sr-only" : ""}>
-            Inventory Management
+        <SidebarGroup className="pt-4">
+          <SidebarGroupLabel className={`${!open ? "sr-only" : ""} text-muted-foreground text-xs uppercase tracking-wider px-4 mb-2`}>
+            Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="space-y-1 px-2">
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 ${
+                        `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
                           isActive
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-accent"
+                            ? "bg-gradient-to-r from-primary to-accent text-white shadow-lg shadow-primary/20"
+                            : "hover:bg-accent/50 hover:translate-x-1"
                         }`
                       }
                     >
-                      <item.icon className="h-5 w-5" />
-                      {open && <span>{item.title}</span>}
+                      <item.icon className={`h-5 w-5 transition-transform group-hover:scale-110 ${!open && 'mx-auto'}`} />
+                      {open && <span className="font-medium">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
