@@ -18,6 +18,7 @@ export default function Orders() {
   const [isNormalImporting, setIsNormalImporting] = useState(false);
   const [isSettingUpWebhooks, setIsSettingUpWebhooks] = useState(false);
   const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const [dateRange, setDateRange] = useState({
     from: subDays(new Date(), 30),
     to: new Date(),
@@ -211,6 +212,31 @@ export default function Orders() {
     }
   };
 
+  const handleClearOrders = async () => {
+    if (!confirm("Are you sure you want to delete ALL orders? This action cannot be undone.")) {
+      return;
+    }
+
+    setIsClearing(true);
+    toast.info("Clearing all orders...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("import-orders-csv", {
+        body: { clearData: true, csvData: [] }
+      });
+
+      if (error) throw error;
+
+      toast.success("All orders cleared successfully!");
+      refetch();
+    } catch (error: any) {
+      console.error("Clear orders error:", error);
+      toast.error(`Failed to clear orders: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   const handleSetupWebhooks = async () => {
     setIsSettingUpWebhooks(true);
     toast.info("Setting up Shopify webhooks...");
@@ -288,6 +314,16 @@ export default function Orders() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
+                <Button onClick={handleClearOrders} disabled={isClearing || isNormalImporting || isImporting} variant="destructive">
+                  {isClearing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Clearing...
+                    </>
+                  ) : (
+                    "Clear Orders"
+                  )}
+                </Button>
                 <Button onClick={() => setCsvImportOpen(true)} variant="outline">
                   <Upload className="mr-2 h-4 w-4" />
                   Import CSV
