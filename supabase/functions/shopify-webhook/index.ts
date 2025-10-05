@@ -142,6 +142,8 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
     const actualTotalPrice = actualUnitPrice * item.quantity;
 
     // Insert line item with actual sold prices
+    console.log(`Inserting line item: SKU=${sku}, product_id=${product?.id}, quantity=${item.quantity}`);
+    
     const { error: lineItemError } = await supabase
       .from('order_line_items')
       .insert({
@@ -157,23 +159,30 @@ async function handleOrderCreate(supabase: any, shopifyOrder: any) {
 
     if (lineItemError) {
       console.error(`Failed to insert line item for SKU ${sku}:`, lineItemError);
+      console.error(`Line item data:`, { order_id: insertedOrder.id, sku, product_id: product?.id, quantity: item.quantity });
       throw lineItemError; // Stop processing if line items fail
     }
+    
+    console.log(`Line item inserted successfully for SKU ${sku}`);
 
     // Reserve inventory if product exists
     if (product) {
+      console.log(`Calling reserve_inventory for product_id=${product.id}, quantity=${item.quantity}`);
+      
       const { error: reserveError } = await supabase.rpc('reserve_inventory', {
         p_product_id: product.id,
         p_quantity: item.quantity,
       });
 
       if (reserveError) {
-        console.error('Error reserving inventory:', reserveError);
+        console.error(`Error reserving inventory for SKU ${sku}:`, reserveError);
+        console.error(`Reserve params:`, { product_id: product.id, quantity: item.quantity });
+        // Don't throw - continue processing other items
       } else {
-        console.log(`Reserved ${item.quantity} units of ${sku}`);
+        console.log(`✓ Reserved ${item.quantity} units of ${sku}`);
       }
     } else {
-      console.warn(`Product not found for SKU: ${sku}`);
+      console.warn(`⚠ Product not found for SKU: ${sku} - cannot reserve inventory`);
     }
   }
 }
