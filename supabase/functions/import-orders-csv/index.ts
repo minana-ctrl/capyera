@@ -23,9 +23,9 @@ Deno.serve(async (req) => {
       // Run clears in background to avoid request timeouts/compute limits
       // deno-lint-ignore no-explicit-any
       (globalThis as any).EdgeRuntime?.waitUntil((async () => {
-        await supabaseClient.from('daily_sales_summary').delete();
-        await supabaseClient.from('order_line_items').delete();
-        await supabaseClient.from('orders').delete();
+        await supabaseClient.from('daily_sales_summary').delete().gte('created_at', '1970-01-01');
+        await supabaseClient.from('order_line_items').delete().gte('created_at', '1970-01-01');
+        await supabaseClient.from('orders').delete().gte('created_at', '1970-01-01');
         console.log('Data cleared successfully (background)');
       })());
 
@@ -37,9 +37,9 @@ Deno.serve(async (req) => {
 
     if (clearData) {
       console.log('Clearing existing data...');
-      await supabaseClient.from('daily_sales_summary').delete();
-      await supabaseClient.from('order_line_items').delete();
-      await supabaseClient.from('orders').delete();
+      await supabaseClient.from('daily_sales_summary').delete().gte('created_at', '1970-01-01');
+      await supabaseClient.from('order_line_items').delete().gte('created_at', '1970-01-01');
+      await supabaseClient.from('orders').delete().gte('created_at', '1970-01-01');
       console.log('Data cleared successfully');
     }
 
