@@ -117,25 +117,25 @@ Deno.serve(async (req) => {
       const ordersArray = Array.from(orders.values());
       console.log(`Inserting ${ordersArray.length} orders from CSV ${csvIndex + 1}...`);
       
+      let insertedOrderIds: any[] = [];
+      
       for (let i = 0; i < ordersArray.length; i += batchSize) {
         const batch = ordersArray.slice(i, i + batchSize);
-        const { error } = await supabaseClient.from('orders').upsert(batch, {
+        const { data, error } = await supabaseClient.from('orders').upsert(batch, {
           onConflict: 'order_number',
           ignoreDuplicates: false
-        });
+        }).select('id, order_number');
+        
         if (error) {
           console.error('Error inserting orders batch:', error);
+        } else if (data) {
+          insertedOrderIds.push(...data);
+          console.log(`✓ Inserted ${data.length} orders in batch`);
         }
       }
 
-      // Get order IDs for this CSV's orders
-      const orderNumbers = Array.from(orders.keys()).map(n => n.replace('#', ''));
-      const { data: insertedOrders } = await supabaseClient
-        .from('orders')
-        .select('id, order_number')
-        .in('order_number', orderNumbers);
-
-      const orderIdMap = new Map(insertedOrders?.map(o => [o.order_number, o.id]) || []);
+      console.log(`Total orders inserted: ${insertedOrderIds.length}`);
+      const orderIdMap = new Map(insertedOrderIds.map(o => [o.order_number, o.id]));
 
       // Map and insert line items
       const lineItemsWithIds = lineItems
@@ -147,6 +147,12 @@ Deno.serve(async (req) => {
 
       console.log(`Inserting ${lineItemsWithIds.length} line items from CSV ${csvIndex + 1}...`);
       
+      if (lineItemsWithIds.length === 0) {
+        console.warn('⚠️ No line items to insert. This might indicate a parsing issue.');
+        console.log('Sample order numbers from orders:', Array.from(orders.keys()).slice(0, 3));
+        console.log('Sample order numbers from lineItems:', lineItems.slice(0, 3).map(li => li.order_number));
+      }
+      
       for (let i = 0; i < lineItemsWithIds.length; i += batchSize) {
         const batch = lineItemsWithIds.slice(i, i + batchSize);
         const { error } = await supabaseClient.from('order_line_items').insert(
@@ -154,6 +160,8 @@ Deno.serve(async (req) => {
         );
         if (error) {
           console.error('Error inserting line items batch:', error);
+        } else {
+          console.log(`✓ Inserted ${batch.length} line items in batch`);
         }
       }
 
