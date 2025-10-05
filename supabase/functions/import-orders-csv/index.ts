@@ -18,11 +18,28 @@ Deno.serve(async (req) => {
 
     const { csvData, clearData } = await req.json();
 
+    if (clearData && (!csvData || csvData.length === 0)) {
+      console.log('Clearing existing data in background...');
+      // Run clears in background to avoid request timeouts/compute limits
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).EdgeRuntime?.waitUntil((async () => {
+        await supabaseClient.from('daily_sales_summary').delete();
+        await supabaseClient.from('order_line_items').delete();
+        await supabaseClient.from('orders').delete();
+        console.log('Data cleared successfully (background)');
+      })());
+
+      return new Response(
+        JSON.stringify({ success: true, message: 'Clear started' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (clearData) {
       console.log('Clearing existing data...');
-      await supabaseClient.from('daily_sales_summary').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabaseClient.from('order_line_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabaseClient.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabaseClient.from('daily_sales_summary').delete();
+      await supabaseClient.from('order_line_items').delete();
+      await supabaseClient.from('orders').delete();
       console.log('Data cleared successfully');
     }
 
