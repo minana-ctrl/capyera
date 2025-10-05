@@ -6,16 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, Loader2, Webhook } from "lucide-react";
+import { Download, Loader2, Webhook, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { format, subDays } from "date-fns";
 import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { ImportOrdersDialog } from "@/components/ImportOrdersDialog";
 
 export default function Orders() {
   const [isImporting, setIsImporting] = useState(false);
   const [isNormalImporting, setIsNormalImporting] = useState(false);
   const [isSettingUpWebhooks, setIsSettingUpWebhooks] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [dateRange, setDateRange] = useState({
     from: subDays(new Date(), 30),
     to: new Date(),
@@ -286,6 +288,10 @@ export default function Orders() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
+                <Button onClick={() => setCsvImportOpen(true)} variant="outline">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import CSV
+                </Button>
                 <Button onClick={handleNormalImport} disabled={isNormalImporting || isImporting}>
                   {isNormalImporting ? (
                     <>
@@ -456,6 +462,12 @@ export default function Orders() {
           </CardContent>
         </Card>
       </div>
+
+      <ImportOrdersDialog
+        open={csvImportOpen}
+        onOpenChange={setCsvImportOpen}
+        onSuccess={() => refetch()}
+      />
     </DashboardLayout>
   );
 }
