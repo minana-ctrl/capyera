@@ -14,17 +14,19 @@ export const SalesTrendCard = () => {
   const PACIFIC_TZ = 'America/Los_Angeles';
   
   const getPacificStartOfDay = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const pacificDate = toZonedTime(date, PACIFIC_TZ);
+    const year = pacificDate.getFullYear();
+    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
+    const day = String(pacificDate.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}T00:00:00`;
     return fromZonedTime(dateStr, PACIFIC_TZ);
   };
 
   const getPacificEndOfDay = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const pacificDate = toZonedTime(date, PACIFIC_TZ);
+    const year = pacificDate.getFullYear();
+    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
+    const day = String(pacificDate.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}T23:59:59.999`;
     return fromZonedTime(dateStr, PACIFIC_TZ);
   };

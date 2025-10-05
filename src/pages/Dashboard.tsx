@@ -14,20 +14,22 @@ const Dashboard = () => {
   const PACIFIC_TZ = 'America/Los_Angeles';
   
   const getPacificStartOfDay = (date: Date) => {
-    // Create a date string in Pacific time at midnight
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    // First convert to Pacific time to get the correct Pacific date
+    const pacificDate = toZonedTime(date, PACIFIC_TZ);
+    const year = pacificDate.getFullYear();
+    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
+    const day = String(pacificDate.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}T00:00:00`;
     // Convert Pacific midnight to UTC
     return fromZonedTime(dateStr, PACIFIC_TZ);
   };
 
   const getPacificEndOfDay = (date: Date) => {
-    // Create a date string in Pacific time at end of day
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    // First convert to Pacific time to get the correct Pacific date
+    const pacificDate = toZonedTime(date, PACIFIC_TZ);
+    const year = pacificDate.getFullYear();
+    const month = String(pacificDate.getMonth() + 1).padStart(2, '0');
+    const day = String(pacificDate.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}T23:59:59.999`;
     // Convert Pacific end of day to UTC
     return fromZonedTime(dateStr, PACIFIC_TZ);
