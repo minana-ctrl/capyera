@@ -35,11 +35,18 @@ Deno.serve(async (req) => {
 
     console.log(`Processing ${csvData.length} CSV files...`);
     
-    const orders = new Map<string, any>();
-    const lineItems: any[] = [];
-    let processedRows = 0;
+    let totalOrdersImported = 0;
+    let totalLineItemsImported = 0;
+    const batchSize = 50; // Smaller batches to reduce memory
 
-    for (const csv of csvData) {
+    // Process one CSV at a time to reduce memory usage
+    for (let csvIndex = 0; csvIndex < csvData.length; csvIndex++) {
+      const csv = csvData[csvIndex];
+      console.log(`Processing CSV ${csvIndex + 1}/${csvData.length}...`);
+      
+      const orders = new Map<string, any>();
+      const lineItems: any[] = [];
+      
       const lines = csv.split('\n');
       const headers = lines[0].split(',').map((h: string) => h.trim());
       
@@ -57,7 +64,6 @@ Deno.serve(async (req) => {
         const orderNumber = row['Name'];
         if (!orderNumber) continue;
 
-        // First row of order contains all order details
         if (!orders.has(orderNumber)) {
           const placedAt = row['Created at'] ? new Date(row['Created at']).toISOString() : new Date().toISOString();
           
@@ -78,7 +84,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Add line item if present
         if (row['Lineitem name'] && row['Lineitem name'].trim()) {
           lineItems.push({
             order_number: orderNumber.replace('#', ''),
@@ -89,60 +94,67 @@ Deno.serve(async (req) => {
             total_price: parseFloat(row['Lineitem price']) * (parseInt(row['Lineitem quantity']) || 1),
           });
         }
+      }
 
-        processedRows++;
-        if (processedRows % 1000 === 0) {
-          console.log(`Processed ${processedRows} rows...`);
+      // Insert orders for this CSV
+      const ordersArray = Array.from(orders.values());
+      console.log(`Inserting ${ordersArray.length} orders from CSV ${csvIndex + 1}...`);
+      
+      for (let i = 0; i < ordersArray.length; i += batchSize) {
+        const batch = ordersArray.slice(i, i + batchSize);
+        const { error } = await supabaseClient.from('orders').upsert(batch, {
+          onConflict: 'order_number',
+          ignoreDuplicates: false
+        });
+        if (error) {
+          console.error('Error inserting orders batch:', error);
         }
       }
-    }
 
-    console.log(`Importing ${orders.size} orders...`);
-    const ordersArray = Array.from(orders.values());
-    
-    // Insert orders in batches
-    const batchSize = 100;
-    for (let i = 0; i < ordersArray.length; i += batchSize) {
-      const batch = ordersArray.slice(i, i + batchSize);
-      const { error } = await supabaseClient.from('orders').insert(batch);
-      if (error) {
-        console.error('Error inserting orders batch:', error);
+      // Get order IDs for this CSV's orders
+      const orderNumbers = Array.from(orders.keys()).map(n => n.replace('#', ''));
+      const { data: insertedOrders } = await supabaseClient
+        .from('orders')
+        .select('id, order_number')
+        .in('order_number', orderNumbers);
+
+      const orderIdMap = new Map(insertedOrders?.map(o => [o.order_number, o.id]) || []);
+
+      // Map and insert line items
+      const lineItemsWithIds = lineItems
+        .map(item => ({
+          ...item,
+          order_id: orderIdMap.get(item.order_number),
+        }))
+        .filter(item => item.order_id);
+
+      console.log(`Inserting ${lineItemsWithIds.length} line items from CSV ${csvIndex + 1}...`);
+      
+      for (let i = 0; i < lineItemsWithIds.length; i += batchSize) {
+        const batch = lineItemsWithIds.slice(i, i + batchSize);
+        const { error } = await supabaseClient.from('order_line_items').insert(
+          batch.map(({ order_number, ...rest }) => rest)
+        );
+        if (error) {
+          console.error('Error inserting line items batch:', error);
+        }
       }
-    }
 
-    // Get order IDs
-    const { data: insertedOrders } = await supabaseClient
-      .from('orders')
-      .select('id, order_number');
+      totalOrdersImported += orders.size;
+      totalLineItemsImported += lineItemsWithIds.length;
 
-    const orderIdMap = new Map(insertedOrders?.map(o => [o.order_number, o.id]) || []);
-
-    // Map line items to order IDs
-    const lineItemsWithIds = lineItems
-      .map(item => ({
-        ...item,
-        order_id: orderIdMap.get(item.order_number),
-      }))
-      .filter(item => item.order_id);
-
-    console.log(`Importing ${lineItemsWithIds.length} line items...`);
-    
-    // Insert line items in batches
-    for (let i = 0; i < lineItemsWithIds.length; i += batchSize) {
-      const batch = lineItemsWithIds.slice(i, i + batchSize);
-      const { error } = await supabaseClient.from('order_line_items').insert(
-        batch.map(({ order_number, ...rest }) => rest)
-      );
-      if (error) {
-        console.error('Error inserting line items batch:', error);
-      }
+      // Clear memory
+      orders.clear();
+      lineItems.length = 0;
+      
+      console.log(`Completed CSV ${csvIndex + 1}/${csvData.length}`);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        ordersImported: orders.size,
-        lineItemsImported: lineItemsWithIds.length,
+        ordersImported: totalOrdersImported,
+        lineItemsImported: totalLineItemsImported,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
